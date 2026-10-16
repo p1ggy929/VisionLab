@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="grid c2">
+  <div class="card">
+    <header><h3>平台运行环境</h3></header>
+    <div id="sys-info"></div>
+  </div>
+  <div class="card">
+    <header><h3>关键配置</h3></header>
+    <div id="sys-settings"></div>
+  </div>
+</div>
+
+<div class="card">
+  <header><h3>用户与角色</h3>
+    <span class="muted small">admin / teacher / researcher / viewer 四角色 RBAC</span></header>
+  <div id="user-table"></div>
+</div>
+{% endblock %}

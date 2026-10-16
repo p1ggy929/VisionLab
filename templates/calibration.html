@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="grid c2">
+  <div class="card">
+    <header><h3>相机信息</h3><span class="muted small">实时状态</span></header>
+    <div id="camera-info"></div>
+  </div>
+  <div class="card">
+    <header><h3>标定历史</h3><span class="muted small">内参 + 深度平面校验</span></header>
+    <div class="hint">
+      平台会读取相机内参与深度尺度，并执行<b>深度平面校验</b>：按相机高度与焦距推算标靶所在图像行，
+      读取该处深度与真值对比，输出偏差曲线。这是双目测距可信度的前提。
+    </div>
+    <div id="calibration-list"></div>
+  </div>
+</div>
+{% endblock %}

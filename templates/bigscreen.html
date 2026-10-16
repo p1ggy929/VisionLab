@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="bs-title">
+  <h1>视界智研 · 双目视觉测距与目标检测算法实验平台</h1>
+  <span class="muted small">按 F 全屏 · 每 15 秒自动刷新</span>
+</div>
+
+<div class="bs-grid">
+  <div class="bs-kpi" id="bs-kpi"></div>
+
+  <div class="card span7">
+    <header><h3>距离—误差曲线（1–20 m）</h3></header>
+    <div id="bs-chart-distance" class="chart"></div>
+  </div>
+  <div class="card span5">
+    <header><h3>系统与运行状态</h3></header>
+    <div id="bs-health"></div>
+    <h4 style="margin-top:12px">最新实验流</h4>
+    <div id="bs-feed"></div>
+  </div>
+
+  <div class="card span4">
+    <header><h3>模型排行榜</h3></header>
+    <div id="bs-leaderboard"></div>
+  </div>
+  <div class="card span8">
+    <header><h3>类别 × 距离 误差热力图</h3></header>
+    <div id="bs-chart-heatmap" class="chart"></div>
+  </div>
+
+  <div class="card span5">
+    <header><h3>按光照条件</h3></header>
+    <div id="bs-chart-illum" class="chart"></div>
+  </div>
+  <div class="card span7">
+    <header><h3>高误差样本画廊</h3></header>
+    <div id="bs-gallery"></div>
+  </div>
+</div>
+{% endblock %}

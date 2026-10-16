@@ -1,0 +1,82 @@
+# ============================================================
+# 类别体系（按任务隔离：检测 11 类 / 分割 2 类）
+# 来源：项目 A backend/config.py 的类别、分组与英文别名
+# ============================================================
+
+detection:
+  name: "道路目标检测 11 类"
+  task_type: "detection"
+  num_classes: 11
+  classes:
+    - id: 0
+      name: "斑马线"
+      en: "crosswalk"
+      group: "large"
+    - id: 1
+      name: "车辆"
+      en: "vehicle"
+      group: "large"
+    - id: 2
+      name: "大理石球"
+      en: "marble_ball"
+      group: "large"
+    - id: 3
+      name: "废瓶子"
+      en: "waste_bottle"
+      group: "small"
+    - id: 4
+      name: "废纸"
+      en: "waste_paper"
+      group: "small"
+    - id: 5
+      name: "减速带"
+      en: "speed_bump"
+      group: "large"
+    - id: 6
+      name: "交通标志"
+      en: "traffic_sign"
+      group: "small"
+    - id: 7
+      name: "井盖"
+      en: "manhole_cover"
+      group: "small"
+    - id: 8
+      name: "路标"
+      en: "road_marker"
+      group: "large"
+    - id: 9
+      name: "落叶"
+      en: "fallen_leaf"
+      group: "small"
+    - id: 10
+      name: "行人"
+      en: "pedestrian"
+      group: "large"
+  # 英文别名（沿用项目 A，用于与既有标注/权重对齐）
+  aliases:
+    斑马线: ["crosswalk", "zebra_crossing"]
+    车辆: ["vehicle", "car"]
+    大理石球: ["marble_ball", "ball"]
+    废瓶子: ["waste_bottle", "bottle"]
+    废纸: ["waste_paper", "paper"]
+    减速带: ["speed_bump", "speedbreaker"]
+    交通标志: ["traffic_sign", "sign"]
+    井盖: ["manhole_cover", "manhole"]
+    路标: ["road_marker", "road_sign"]
+    落叶: ["fallen_leaf", "leaf"]
+    行人: ["pedestrian", "person"]
+
+segmentation:
+  name: "道路可通行区域分割 2 类"
+  task_type: "segmentation"
+  num_classes: 1
+  classes:
+    - id: 0
+      name: "背景"
+      en: "background"
+    - id: 1
+      name: "可通行区域"
+      en: "road"
+  # 掩膜前景像素值白名单（修复项目 B 的 ==17 与 >0 口径冲突）
+  foreground_values: [1, 17, 255]
+  primary_foreground_value: 17

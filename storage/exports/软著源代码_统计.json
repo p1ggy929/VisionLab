@@ -1,0 +1,89 @@
+{
+  "generated_at": "2026-10-08T19:17:15",
+  "file_count": 105,
+  "code_lines": 16372,
+  "page_size": 50,
+  "pages_each_side": 30,
+  "top_files": [
+    [
+      "static/js/pages.js",
+      2066
+    ],
+    [
+      "services/dataset_service.py",
+      797
+    ],
+    [
+      "services/analysis_service.py",
+      636
+    ],
+    [
+      "services/pipeline_service.py",
+      511
+    ],
+    [
+      "core/schema.py",
+      440
+    ],
+    [
+      "services/project_service.py",
+      397
+    ],
+    [
+      "services/report_service.py",
+      377
+    ],
+    [
+      "algorithms/segmentation/backbones/pvtv2.py",
+      356
+    ],
+    [
+      "api/inference.py",
+      327
+    ],
+    [
+      "core/camera/replay_backend.py",
+      325
+    ],
+    [
+      "services/model_registry.py",
+      322
+    ],
+    [
+      "services/capture_service.py",
+      300
+    ],
+    [
+      "static/css/style.css",
+      283
+    ],
+    [
+      "core/media.py",
+      277
+    ],
+    [
+      "algorithms/detection/yolo_adapter.py",
+      270
+    ],
+    [
+      "tools/e2e_check.py",
+      270
+    ],
+    [
+      "core/camera/mock_backend.py",
+      257
+    ],
+    [
+      "static/js/api.js",
+      252
+    ],
+    [
+      "static/js/ui.js",
+      232
+    ],
+    [
+      "core/camera/service.py",
+      229
+    ]
+  ]
+}

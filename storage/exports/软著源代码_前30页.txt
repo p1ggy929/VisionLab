@@ -1,0 +1,1503 @@
+视界智研算法实验平台 V1.0  源代码
+导出时间：2026-10-08 19:17:15
+文件总数：105   有效代码行：16372
+// ==================== app.py ====================
+"""视界智研 —— 基于双目视觉测距与目标检测算法实验平台。
+启动：
+    python app.py
+或：
+    python app.py --port 5000 --host 0.0.0.0
+技术栈沿用两个原项目：Flask + Flask-SocketIO + Jinja2 + 原生 JS + Plotly +
+PyTorch + Ultralytics + OpenCV + pyrealsense2 + NumPy/Pandas/SciPy + ReportLab；
+元数据使用 Python 标准库 sqlite3（零额外依赖）。
+"""
+from __future__ import annotations
+import argparse
+import sys
+import threading
+import time
+import webbrowser
+from pathlib import Path
+ROOT = Path(__file__).resolve().parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+from core import db  # noqa: E402
+from core.config import settings  # noqa: E402
+from core.logging_setup import get_logger, setup_logging  # noqa: E402
+log = get_logger("app")
+def create_app():
+    from flask import Flask
+    from api import register_blueprints
+    from api import ws as ws_module
+    from api.common import register_error_handlers
+    from api.pages import bp as pages_bp
+    from services import auth_service
+    app = Flask(__name__, template_folder="templates", static_folder="static")
+    app.config["SECRET_KEY"] = settings.get("server.secret_key", "visionlab")
+    app.config["JSON_AS_ASCII"] = False
+    app.config["MAX_CONTENT_LENGTH"] = 512 * 1024 * 1024
+    app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
+    register_error_handlers(app)
+    register_blueprints(app)
+    app.register_blueprint(pages_bp)
+    socketio = None
+    if settings.get("server.realtime", "auto") != "off":
+        try:
+            from flask_socketio import SocketIO
+            socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading",
+                                ping_timeout=30, ping_interval=10)
+            ws_module.init(socketio)
+        except ImportError:
+            log.warning("未安装 flask-socketio，实时推流降级为轮询模式")
+            socketio = None
+    app.extensions["socketio"] = socketio
+    @app.context_processor
+    def inject_globals():
+        return {"app_name": settings.get("app.name", "视界智研"),
+                "app_short": settings.get("app.short_name", "视界智研"),
+                "app_version": settings.get("app.version", "1.0.0"),
+                "has_socketio": socketio is not None}
+    from api.pages import nav_icon, nav_url
+    app.jinja_env.globals["nav_url"] = nav_url
+    app.jinja_env.globals["nav_icon"] = nav_icon
+    @app.before_request
+    def guard_pages():
+        """页面请求未登录时跳转登录页；API 请求仍返回标准 401。"""
+        from flask import redirect, request
+        path = request.path
+        if path.startswith("/api/") or path.startswith("/static/"):
+            return None
+        if path in ("/login", "/favicon.ico"):
+            return None
+        from api.common import load_user
+        if load_user() is None:
+            return redirect(f"/login?next={path}")
+        return None
+    @app.after_request
+    def add_headers(response):
+        response.headers.setdefault("X-Platform", "VisionLab-D455")
+        if response.mimetype == "application/json":
+            response.headers["Cache-Control"] = "no-store"
+        return response
+    with app.app_context():
+        db.init_db()
+        created = auth_service.ensure_default_admin()
+        if created:
+            log.info("默认管理员已创建: %s", created["username"])
+        from algorithms import registry
+        registry.load_builtin()
+    return app
+def bootstrap_data() -> None:
+    """首次启动的准备：默认项目、相机自检、必要时启动合成场景。"""
+    from core.camera.service import get_camera_service
+    from services import model_registry, project_service
+    if not db.query_scalar("SELECT COUNT(*) FROM project WHERE is_deleted=0", (), 0):
+        project = project_service.create_project(
+            "校园道路视觉感知", "视界智研平台的默认项目，用于承载检测/分割/测距实验",
+            scene="campus_road", app_target="sweeper")
+        log.info("已创建默认项目: %s", project["name"])
+    if not db.query_scalar("SELECT COUNT(*) FROM model WHERE is_deleted=0", (), 0):
+        try:
+            result = model_registry.scan_platform_models()
+            if result.get("imported"):
+                log.info("已登记平台模型: %d 个", result["imported"])
+        except Exception as exc:  # noqa: BLE001
+            log.warning("扫描平台模型失败: %s", exc)
+    camera = get_camera_service()
+    if not camera.running:
+        try:
+            info = camera.start()
+            log.info("相机已就绪: backend=%s %sx%s", info.get("backend"),
+                     info.get("width"), info.get("height"))
+        except Exception as exc:  # noqa: BLE001
+            log.warning("相机启动失败: %s", exc)
+    from services import pipeline_service
+    pipeline_service.get_pipeline()
+    try:
+        from services import analysis_service
+        plan = analysis_service.active_calibration()
+        if plan:
+            pipeline_service.get_pipeline().set_calibration(plan)
+            log.info("已启用校正方案: %s", plan.name)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("加载校正方案失败: %s", exc)
+def main() -> int:
+    parser = argparse.ArgumentParser(description="视界智研算法实验平台")
+    parser.add_argument("--host", default=None, help="监听地址（默认取配置）")
+    parser.add_argument("--port", type=int, default=None, help="端口（默认取配置）")
+    parser.add_argument("--debug", action="store_true", help="开启调试模式")
+    parser.add_argument("--no-browser", action="store_true", help="不自动打开浏览器")
+    parser.add_argument("--no-camera", action="store_true", help="强制使用合成场景（离线演示）")
+    args = parser.parse_args()
+    setup_logging()
+    if args.no_camera:
+        import os
+        os.environ["VISIONLAB_CAMERA__BACKEND"] = "mock"
+    app = create_app()
+    bootstrap_data()
+    host = args.host or settings.get("server.host", "0.0.0.0")
+    port = int(args.port or settings.get("server.port", 5000))
+    debug = bool(args.debug or settings.get("server.debug", False))
+    from api import ws as ws_module
+    ws_module.start_streamer()
+    url = f"http://127.0.0.1:{port}/"
+    banner = f"""
+============================================================
+  {settings.get('app.name')}
+  版本 {settings.get('app.version')}   代号 {settings.get('app.code_name')}
+------------------------------------------------------------
+  访问地址   {url}
+  存储根目录 {settings.storage_root}
+  元数据库   {settings.db_path}
+  日志文件   {settings.log_path}
+------------------------------------------------------------
+  首次登录   admin / admin123   （请登录后立即修改密码）
+  离线演示   无 RealSense 设备时自动使用合成场景
+============================================================
+"""
+    print(banner)
+    log.info("平台启动: %s", url)
+    if not args.no_browser and not debug:
+        def _open() -> None:
+            time.sleep(1.5)
+            try:
+                webbrowser.open(url)
+            except Exception:  # noqa: BLE001
+                pass
+        threading.Thread(target=_open, daemon=True).start()
+    socketio = app.extensions.get("socketio")
+    try:
+        if socketio is not None:
+            socketio.run(app, host=host, port=port, debug=debug, allow_unsafe_werkzeug=True,
+                         use_reloader=False)
+        else:
+            app.run(host=host, port=port, debug=debug, threaded=True, use_reloader=False)
+    except KeyboardInterrupt:
+        log.info("收到中断信号，正在停止…")
+    finally:
+        ws_module.stop_streamer()
+        from core.camera.service import get_camera_service
+        get_camera_service().stop()
+    return 0
+if __name__ == "__main__":
+    raise SystemExit(main())
+
+// ==================== core/config.py ====================
+"""配置加载器：YAML + 环境变量覆盖，全平台唯一配置入口。"""
+from __future__ import annotations
+import os
+from pathlib import Path
+from typing import Any, Dict
+import yaml
+from .exceptions import ConfigError
+# 仓库根目录：本文件位于 <root>/core/config.py
+ROOT = Path(__file__).resolve().parent.parent
+CONFIG_DIR = ROOT / "configs"
+_ENV_PREFIX = "VISIONLAB_"
+def _deep_merge(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
+    result = dict(base)
+    for key, value in override.items():
+        if isinstance(value, dict) and isinstance(result.get(key), dict):
+            result[key] = _deep_merge(result[key], value)
+        else:
+            result[key] = value
+    return result
+def _read_yaml(path: Path) -> Dict[str, Any]:
+    if not path.exists():
+        raise ConfigError(f"配置文件不存在: {path}")
+    with path.open("r", encoding="utf-8") as handle:
+        data = yaml.safe_load(handle) or {}
+    if not isinstance(data, dict):
+        raise ConfigError(f"配置文件格式错误（顶层必须是映射）: {path}")
+    return data
+def _apply_env_overrides(data: Dict[str, Any]) -> Dict[str, Any]:
+    """支持 VISIONLAB_SECTION__KEY=value 形式覆盖，值按 YAML 解析。"""
+    for raw_key, raw_value in os.environ.items():
+        if not raw_key.startswith(_ENV_PREFIX):
+            continue
+        path = raw_key[len(_ENV_PREFIX):].lower().split("__")
+        if not path or not path[0]:
+            continue
+        cursor = data
+        for part in path[:-1]:
+            cursor = cursor.setdefault(part, {})
+            if not isinstance(cursor, dict):
+                break
+        else:
+            try:
+                parsed = yaml.safe_load(raw_value)
+            except yaml.YAMLError:
+                parsed = raw_value
+            cursor[path[-1]] = parsed
+    return data
+class Settings:
+    """平台配置对象。点号访问：settings.get("ranging.kernel")。"""
+    def __init__(self, root: Path = ROOT, config_dir: Path = CONFIG_DIR) -> None:
+        self.root = Path(root)
+        self.config_dir = Path(config_dir)
+        merged: Dict[str, Any] = {}
+        for name in ("default.yaml", "classes.yaml", "models.yaml"):
+            merged = _deep_merge(merged, _read_yaml(self.config_dir / name))
+        merged = _apply_env_overrides(merged)
+        self._data = merged
+        # 存储根目录解析为绝对路径
+        storage_root = Path(str(self.get("storage.root", "storage")))
+        if not storage_root.is_absolute():
+            storage_root = self.root / storage_root
+        self.storage_root = storage_root.resolve()
+    # ---------- 读取 ----------
+    def get(self, dotted: str, default: Any = None) -> Any:
+        cursor: Any = self._data
+        for part in dotted.split("."):
+            if not isinstance(cursor, dict) or part not in cursor:
+                return default
+            cursor = cursor[part]
+        return cursor
+    def require(self, dotted: str) -> Any:
+        value = self.get(dotted, None)
+        if value is None:
+            raise ConfigError(f"缺少必填配置项: {dotted}")
+        return value
+    def section(self, name: str) -> Dict[str, Any]:
+        value = self.get(name, {})
+        return value if isinstance(value, dict) else {}
+    def as_dict(self) -> Dict[str, Any]:
+        return self._data
+    # ---------- 派生路径 ----------
+    def storage_dir(self, name: str) -> Path:
+        rel = self.get(f"storage.dirs.{name}", name)
+        path = self.storage_root / str(rel)
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+    @property
+    def db_path(self) -> Path:
+        path = self.storage_root / "visionlab.db"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        return path
+    @property
+    def log_path(self) -> Path:
+        raw = str(self.get("logging.file", "storage/logs/visionlab.log"))
+        path = Path(raw)
+        if not path.is_absolute():
+            path = self.root / path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        return path
+    # ---------- 类别体系 ----------
+    def detection_classes(self) -> list[dict]:
+        return list(self.get("detection.classes", []) or [])
+    def detection_class_names(self) -> list[str]:
+        return [c["name"] for c in self.detection_classes()]
+    def class_group(self, name: str) -> str:
+        for item in self.detection_classes():
+            if item.get("name") == name:
+                return str(item.get("group", "large"))
+        return "large"
+    def class_alias(self, name: str) -> str:
+        aliases = self.get("detection.aliases", {}) or {}
+        value = aliases.get(name)
+        if isinstance(value, list) and value:
+            return str(value[0])
+        if isinstance(value, str):
+            return value
+        return name
+    def detection_num_classes(self) -> int:
+        return int(self.get("detection.num_classes", len(self.detection_classes())))
+    def segmentation_foreground_values(self) -> list[int]:
+        values = self.get("segmentation.foreground_values", [1, 17, 255]) or [1, 17, 255]
+        return [int(v) for v in values]
+    # ---------- 外部权重/数据来源 ----------
+    def external_source(self, key: str) -> Path | None:
+        """解析 models.yaml 中登记的外部权重/数据目录（相对路径按仓库根解析）。"""
+        raw = self.get(f"external_sources.{key}")
+        if not raw:
+            return None
+        path = Path(str(raw))
+        if not path.is_absolute():
+            path = self.root / path
+        return path if path.exists() else None
+    def weight_search_dirs(self, task: str) -> list[Path]:
+        """返回某任务可用的权重搜索目录（平台自身目录优先，其次外部原项目目录）。"""
+        dirs: list[Path] = []
+        if task == "detection":
+            dirs += [self.storage_dir("models") / "pretrained",
+                     self.storage_dir("models") / "trained"]
+            for key in ("detection_pretrained", "detection_trained"):
+                path = self.external_source(key)
+                if path:
+                    dirs.append(path)
+        else:
+            dirs.append(self.storage_dir("models") / "trained")
+            path = self.external_source("segmentation")
+            if path:
+                dirs.append(path)
+        seen: set[str] = set()
+        result = []
+        for item in dirs:
+            key = str(item).lower()
+            if key not in seen and item.exists():
+                seen.add(key)
+                result.append(item)
+        return result
+    def all_dirs(self) -> None:
+        for name in ("datasets", "captures", "models", "runs", "results",
+                     "calibration", "reports", "logs", "exports"):
+            self.storage_dir(name)
+_settings: Settings | None = None
+def get_settings(reload: bool = False) -> Settings:
+    global _settings
+    if _settings is None or reload:
+        _settings = Settings()
+    return _settings
+settings = get_settings()
+
+// ==================== core/db.py ====================
+"""SQLite 访问层：连接管理、事务、查询助手、初始化与迁移。
+表结构见 core/schema.py；模型层不引入 ORM，保持与原项目一致的轻依赖风格。
+"""
+from __future__ import annotations
+import json
+import sqlite3
+import threading
+import uuid
+from contextlib import contextmanager
+from datetime import datetime, timezone, timedelta
+from typing import Any, Iterable, Iterator, Sequence
+from .config import settings
+from .logging_setup import get_logger
+from .schema import DDL, INDEXES, SCHEMA_VERSION
+log = get_logger("db")
+_local = threading.local()
+_write_lock = threading.RLock()
+CN_TZ = timezone(timedelta(hours=8))
+def now_iso() -> str:
+    return datetime.now(CN_TZ).replace(microsecond=0).isoformat()
+def new_id(prefix: str = "") -> str:
+    token = uuid.uuid4().hex[:16]
+    return f"{prefix}_{token}" if prefix else token
+def _connect() -> sqlite3.Connection:
+    conn = sqlite3.connect(str(settings.db_path), timeout=30.0, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")
+    conn.execute("PRAGMA foreign_keys=ON")
+    return conn
+def get_conn() -> sqlite3.Connection:
+    conn = getattr(_local, "conn", None)
+    if conn is None:
+        conn = _connect()
+        _local.conn = conn
+    return conn
+def close_conn() -> None:
+    conn = getattr(_local, "conn", None)
+    if conn is not None:
+        conn.close()
+        _local.conn = None
+@contextmanager
+def transaction() -> Iterator[sqlite3.Connection]:
+    conn = get_conn()
+    with _write_lock:
+        try:
+            yield conn
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+# ---------------------------------------------------------------- 查询助手
+def query_all(sql: str, params: Sequence[Any] | dict = ()) -> list[dict]:
+    cur = get_conn().execute(sql, params)
+    return [dict(row) for row in cur.fetchall()]
+def query_one(sql: str, params: Sequence[Any] | dict = ()) -> dict | None:
+    cur = get_conn().execute(sql, params)
+    row = cur.fetchone()
+    return dict(row) if row else None
+def query_scalar(sql: str, params: Sequence[Any] | dict = (), default: Any = None) -> Any:
+    cur = get_conn().execute(sql, params)
+    row = cur.fetchone()
+    if row is None:
+        return default
+    return row[0]
+def execute(sql: str, params: Sequence[Any] | dict = ()) -> int:
+    with transaction() as conn:
+        cur = conn.execute(sql, params)
+        return cur.rowcount
+def insert(table: str, data: dict, id_prefix: str = "") -> str:
+    payload = dict(data)
+    if "id" not in payload or not payload["id"]:
+        payload["id"] = new_id(id_prefix)
+    stamp = now_iso()
+    payload.setdefault("created_at", stamp)
+    if _has_column(table, "updated_at"):
+        payload.setdefault("updated_at", stamp)
+    payload = _encode(payload)
+    cols = ", ".join(payload.keys())
+    marks = ", ".join(["?"] * len(payload))
+    with transaction() as conn:
+        conn.execute(f"INSERT INTO {table} ({cols}) VALUES ({marks})", list(payload.values()))
+    return payload["id"]
+def update(table: str, row_id: str, data: dict) -> int:
+    payload = _encode(dict(data))
+    if _has_column(table, "updated_at"):
+        payload["updated_at"] = now_iso()
+    if not payload:
+        return 0
+    assigns = ", ".join(f"{k}=?" for k in payload)
+    params = list(payload.values()) + [row_id]
+    with transaction() as conn:
+        cur = conn.execute(f"UPDATE {table} SET {assigns} WHERE id=?", params)
+        return cur.rowcount
+def soft_delete(table: str, row_id: str) -> int:
+    if _has_column(table, "is_deleted"):
+        return update(table, row_id, {"is_deleted": 1})
+    with transaction() as conn:
+        cur = conn.execute(f"DELETE FROM {table} WHERE id=?", (row_id,))
+        return cur.rowcount
+def paginate(sql: str, count_sql: str, params: Sequence[Any], page: int, page_size: int) -> dict:
+    page = max(1, int(page))
+    page_size = min(500, max(1, int(page_size)))
+    total = int(query_scalar(count_sql, params, 0) or 0)
+    rows = query_all(f"{sql} LIMIT ? OFFSET ?", list(params) + [page_size, (page - 1) * page_size])
+    return {"items": rows, "total": total, "page": page, "page_size": page_size}
+# ---------------------------------------------------------------- 编解码
+_JSON_SUFFIX = (
+    "config", "class_names", "foreground_values", "stats", "validation_report",
+    "meta", "payload", "quality_flags", "metrics", "resource", "filters",
+    "intrinsics", "extrinsics", "depth_check", "config_snapshot", "run_manifest",
+    "boxes", "centroid", "sample_points", "group_by", "by_distance", "by_category",
+    "by_model", "by_size", "by_illumination", "outliers", "calibration_params",
+    "params", "sections", "detail",
+)
+def _encode(data: dict) -> dict:
+    out: dict[str, Any] = {}
+    for key, value in data.items():
+        if isinstance(value, (dict, list, tuple)) and key in _JSON_SUFFIX:
+            out[key] = json.dumps(value, ensure_ascii=False)
+        elif isinstance(value, bool):
+            out[key] = 1 if value else 0
+        else:
+            out[key] = value
+    return out
+def decode_row(row: dict | None) -> dict | None:
+    if row is None:
+        return None
+    out = {}
+    for key, value in row.items():
+        if key in _JSON_SUFFIX and isinstance(value, str):
+            try:
+                out[key] = json.loads(value)
+                continue
+            except json.JSONDecodeError:
+                pass
+        out[key] = value
+    return out
+def decode_rows(rows: Iterable[dict]) -> list[dict]:
+    return [decode_row(r) or {} for r in rows]
+# ---------------------------------------------------------------- 初始化
+_column_cache: dict[str, set[str]] = {}
+def _has_column(table: str, column: str) -> bool:
+    if table not in _column_cache:
+        rows = query_all(f"PRAGMA table_info({table})")
+        _column_cache[table] = {r["name"] for r in rows}
+    return column in _column_cache[table]
+def init_db() -> None:
+    settings.all_dirs()
+    conn = get_conn()
+    with _write_lock:
+        for statement in DDL:
+            conn.execute(statement)
+        for statement in INDEXES:
+            conn.execute(statement)
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS schema_meta (key TEXT PRIMARY KEY, value TEXT)"
+        )
+        conn.execute(
+            "INSERT INTO schema_meta(key, value) VALUES('version', ?) "
+            "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            (str(SCHEMA_VERSION),),
+        )
+        conn.commit()
+    _column_cache.clear()
+    log.info("元数据库初始化完成: %s", settings.db_path)
+def table_counts() -> dict[str, int]:
+    tables = [r["name"] for r in query_all(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+    )]
+    result = {}
+    for name in sorted(tables):
+        result[name] = int(query_scalar(f"SELECT COUNT(*) FROM {name}", (), 0) or 0)
+    return result
+
+// ==================== core/schema.py ====================
+"""元数据库表结构（20 张表）。sqlite3，零额外依赖。
+表命名与设计对应《07_数据库与接口设计.md》第 3 节。
+"""
+from __future__ import annotations
+SCHEMA_VERSION = 1
+DDL: list[str] = [
+    # 1. 用户
+    """
+    CREATE TABLE IF NOT EXISTS user (
+        id TEXT PRIMARY KEY,
+        username TEXT NOT NULL UNIQUE,
+        display_name TEXT,
+        password_hash TEXT NOT NULL,
+        role TEXT NOT NULL DEFAULT 'researcher',
+        email TEXT,
+        is_active INTEGER NOT NULL DEFAULT 1,
+        failed_attempts INTEGER NOT NULL DEFAULT 0,
+        locked_until TEXT,
+        last_login_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )
+    """,
+    # 2. 项目
+    """
+    CREATE TABLE IF NOT EXISTS project (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT,
+        scene TEXT DEFAULT 'campus_road',
+        app_target TEXT DEFAULT 'sweeper',
+        owner_id TEXT,
+        status TEXT NOT NULL DEFAULT 'active',
+        config TEXT DEFAULT '{}',
+        is_deleted INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )
+    """,
+    # 3. 项目成员
+    """
+    CREATE TABLE IF NOT EXISTS project_member (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        role_in_project TEXT NOT NULL DEFAULT 'developer',
+        joined_at TEXT NOT NULL,
+        UNIQUE (project_id, user_id)
+    )
+    """,
+    # 4. 数据集
+    """
+    CREATE TABLE IF NOT EXISTS dataset (
+        id TEXT PRIMARY KEY,
+        project_id TEXT,
+        name TEXT NOT NULL,
+        task_type TEXT NOT NULL,
+        scene TEXT,
+        class_names TEXT DEFAULT '[]',
+        foreground_values TEXT DEFAULT '[]',
+        status TEXT NOT NULL DEFAULT 'draft',
+        latest_version TEXT,
+        description TEXT,
+        created_by TEXT,
+        is_deleted INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )
+    """,
+    # 5. 数据集版本
+    """
+    CREATE TABLE IF NOT EXISTS dataset_version (
+        id TEXT PRIMARY KEY,
+        dataset_id TEXT NOT NULL,
+        version TEXT NOT NULL,
+        content_hash TEXT,
+        image_count INTEGER NOT NULL DEFAULT 0,
+        annotation_count INTEGER NOT NULL DEFAULT 0,
+        stats TEXT DEFAULT '{}',
+        split_ratio TEXT,
+        split_seed INTEGER,
+        split_manifest_uri TEXT,
+        validation_report TEXT DEFAULT '{}',
+        source_root TEXT,
+        frozen_at TEXT,
+        created_at TEXT NOT NULL,
+        UNIQUE (dataset_id, version)
+    )
+    """,
+    # 6. 图像
+    """
+    CREATE TABLE IF NOT EXISTS image (
+        id TEXT PRIMARY KEY,
+        dataset_version_id TEXT NOT NULL,
+        uri TEXT NOT NULL,
+        mask_uri TEXT,
+        sha256 TEXT,
+        width INTEGER,
+        height INTEGER,
+        split TEXT DEFAULT 'train',
+        source TEXT DEFAULT 'import',
+        capture_session_id TEXT,
+        illum TEXT,
+        target_size_group TEXT,
+        meta TEXT DEFAULT '{}',
+        created_at TEXT NOT NULL
+    )
+    """,
+    # 7. 深度图
+    """
+    CREATE TABLE IF NOT EXISTS depth_map (
+        id TEXT PRIMARY KEY,
+        image_id TEXT NOT NULL UNIQUE,
+        uri TEXT NOT NULL,
+        encoding TEXT NOT NULL DEFAULT 'png16',
+        depth_scale REAL NOT NULL DEFAULT 0.001,
+        valid_ratio REAL,
+        min_m REAL,
+        max_m REAL,
+        mean_m REAL,
+        calibration_id TEXT,
+        created_at TEXT NOT NULL
+    )
+    """,
+    # 8. 标注
+    """
+    CREATE TABLE IF NOT EXISTS annotation (
+        id TEXT PRIMARY KEY,
+        image_id TEXT NOT NULL,
+        task_type TEXT NOT NULL,
+        source_format TEXT,
+        payload TEXT DEFAULT '{}',
+        is_verified INTEGER NOT NULL DEFAULT 0,
+        annotator_id TEXT,
+        quality_flags TEXT DEFAULT '[]',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )
+    """,
+    # 9. 模型
+    """
+    CREATE TABLE IF NOT EXISTS model (
+        id TEXT PRIMARY KEY,
+        project_id TEXT,
+        name TEXT NOT NULL,
+        task_type TEXT NOT NULL,
+        framework TEXT,
+        arch TEXT,
+        variant TEXT,
+        input_size TEXT,
+        num_classes INTEGER,
+        class_names TEXT DEFAULT '[]',
+        weights_uri TEXT,
+        weights_sha256 TEXT,
+        source_filename TEXT,
+        weight_origin TEXT DEFAULT 'imported',
+        train_experiment_id TEXT,
+        metrics TEXT DEFAULT '{}',
+        resource TEXT DEFAULT '{}',
+        size_bytes INTEGER DEFAULT 0,
+        notes TEXT,
+        is_deleted INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )
+    """,
+    # 10. 相机设备
+    """
+    CREATE TABLE IF NOT EXISTS camera_device (
+        id TEXT PRIMARY KEY,
+        model TEXT,
+        serial TEXT UNIQUE,
+        firmware TEXT,
+        usb_type TEXT,
+        default_resolution TEXT,
+        default_fps INTEGER,
+        filters TEXT DEFAULT '[]',
+        last_seen_at TEXT,
+        created_at TEXT NOT NULL
+    )
+    """,
+    # 11. 标定
+    """
+    CREATE TABLE IF NOT EXISTS calibration (
+        id TEXT PRIMARY KEY,
+        camera_id TEXT,
+        name TEXT NOT NULL,
+        intrinsics TEXT DEFAULT '{}',
+        extrinsics TEXT DEFAULT '{}',
+        depth_scale REAL,
+        rms_reprojection_px REAL,
+        depth_check TEXT DEFAULT '{}',
+        file_uri TEXT,
+        file_sha256 TEXT,
+        is_default INTEGER NOT NULL DEFAULT 0,
+        created_by TEXT,
+        created_at TEXT NOT NULL
+    )
+    """,
+    # 12. 实验
+    """
+    CREATE TABLE IF NOT EXISTS experiment (
+        id TEXT PRIMARY KEY,
+        project_id TEXT,
+        name TEXT NOT NULL,
+        task_type TEXT NOT NULL,
+        kind TEXT NOT NULL DEFAULT 'infer',
+        status TEXT NOT NULL DEFAULT 'draft',
+        dataset_version_id TEXT,
+        model_id TEXT,
+        calibration_id TEXT,
+        camera_id TEXT,
+        config_snapshot TEXT DEFAULT '{}',
+        run_manifest TEXT DEFAULT '{}',
+        metrics TEXT DEFAULT '{}',
+        progress REAL DEFAULT 0,
+        started_at TEXT,
+        finished_at TEXT,
+        duration_sec REAL,
+        artifact_dir TEXT,
+        log_uri TEXT,
+        error_message TEXT,
+        created_by TEXT,
+        is_deleted INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )
+    """,
+    # 13. 检测结果
+    """
+    CREATE TABLE IF NOT EXISTS detection_result (
+        id TEXT PRIMARY KEY,
+        experiment_id TEXT NOT NULL,
+        image_id TEXT,
+        frame_number INTEGER,
+        frame_uri TEXT,
+        boxes TEXT DEFAULT '[]',
+        num_boxes INTEGER DEFAULT 0,
+        is_miss INTEGER DEFAULT 0,
+        weight_mode TEXT,
+        infer_ms REAL,
+        preprocess_ms REAL,
+        postprocess_ms REAL,
+        created_at TEXT NOT NULL
+    )
+    """,
+    # 14. 分割结果
+    """
+    CREATE TABLE IF NOT EXISTS segmentation_result (
+        id TEXT PRIMARY KEY,
+        experiment_id TEXT NOT NULL,
+        image_id TEXT,
+        frame_number INTEGER,
+        mask_uri TEXT,
+        overlay_uri TEXT,
+        threshold REAL,
+        open_ks INTEGER,
+        close_ks INTEGER,
+        mask_area_ratio REAL,
+        num_contours INTEGER,
+        boundary_length_px INTEGER,
+        centroid TEXT,
+        is_empty INTEGER DEFAULT 0,
+        is_suspicious INTEGER DEFAULT 0,
+        miou REAL,
+        dice REAL,
+        precision_ REAL,
+        recall_ REAL,
+        f1 REAL,
+        infer_ms REAL,
+        created_at TEXT NOT NULL
+    )
+    """,
+    # 15. 测距结果（合并项目 A 的 measurements.csv 与项目 B 的 distance_records.csv）
+    """
+    CREATE TABLE IF NOT EXISTS ranging_result (
+        id TEXT PRIMARY KEY,
+        experiment_id TEXT,
+        detection_result_id TEXT,
+        segmentation_result_id TEXT,
+        model_id TEXT,
+        model_name TEXT,
+        task_type TEXT NOT NULL,
+        strategy TEXT NOT NULL,
+        target_kind TEXT NOT NULL,
+        metric_kind TEXT NOT NULL,
+        category TEXT,
+        size_group TEXT,
+        depth_m REAL,
+        lateral_m REAL,
+        euclidean_m REAL,
+        raw_depth_m REAL,
+        corrected_depth_m REAL,
+        valid_points INTEGER,
+        total_points INTEGER,
+        sample_points TEXT DEFAULT '[]',
+        distance_actual_m REAL,
+        actual_source TEXT,
+        error_m REAL,
+        abs_error_m REAL,
+        rel_error REAL,
+        illumination TEXT,
+        distance_plan_m REAL,
+        calibration_applied TEXT,
+        frame_number INTEGER,
+        record_time TEXT,
+        media_uri TEXT,
+        notes TEXT,
+        source TEXT DEFAULT 'platform',
+        created_at TEXT NOT NULL
+    )
+    """,
+    # 16. 误差分析
+    """
+    CREATE TABLE IF NOT EXISTS error_analysis (
+        id TEXT PRIMARY KEY,
+        experiment_id TEXT,
+        scope TEXT NOT NULL DEFAULT 'project',
+        task_type TEXT,
+        strategy TEXT,
+        group_by TEXT DEFAULT '[]',
+        filters TEXT DEFAULT '{}',
+        sample_count INTEGER DEFAULT 0,
+        valid_count INTEGER DEFAULT 0,
+        miss_count INTEGER DEFAULT 0,
+        miss_rate REAL,
+        mae_m REAL,
+        rmse_m REAL,
+        mre REAL,
+        median_error_m REAL,
+        max_error_m REAL,
+        std_error_m REAL,
+        hit_rate REAL,
+        by_distance TEXT DEFAULT '[]',
+        by_category TEXT DEFAULT '[]',
+        by_model TEXT DEFAULT '[]',
+        by_size TEXT DEFAULT '[]',
+        by_illumination TEXT DEFAULT '[]',
+        outliers TEXT DEFAULT '[]',
+        calibration_method TEXT,
+        calibration_params TEXT DEFAULT '{}',
+        rmse_before REAL,
+        rmse_after REAL,
+        is_recommended INTEGER DEFAULT 0,
+        created_at TEXT NOT NULL
+    )
+    """,
+    # 17. 校正方案
+    """
+    CREATE TABLE IF NOT EXISTS calibration_plan (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        task_type TEXT,
+        strategy TEXT,
+        model_id TEXT,
+        category TEXT,
+        method TEXT NOT NULL,
+        params TEXT DEFAULT '{}',
+        sample_count INTEGER,
+        rmse_before REAL,
+        rmse_after REAL,
+        is_active INTEGER DEFAULT 0,
+        created_at TEXT NOT NULL
+    )
+    """,
+    # 18. 报告
+    """
+    CREATE TABLE IF NOT EXISTS report (
+        id TEXT PRIMARY KEY,
+        experiment_id TEXT,
+        project_id TEXT,
+        name TEXT NOT NULL,
+        template TEXT NOT NULL,
+        sections TEXT DEFAULT '[]',
+        params TEXT DEFAULT '{}',
+        format TEXT NOT NULL,
+        file_uri TEXT,
+        file_size INTEGER DEFAULT 0,
+        share_token TEXT,
+        status TEXT NOT NULL DEFAULT 'done',
+        created_by TEXT,
+        created_at TEXT NOT NULL
+    )
+    """,
+    # 19. 审计日志
+    """
+    CREATE TABLE IF NOT EXISTS audit_log (
+        id TEXT PRIMARY KEY,
+        user_id TEXT,
+        username TEXT,
+        action TEXT NOT NULL,
+        resource_type TEXT,
+        resource_id TEXT,
+        result TEXT DEFAULT 'success',
+        ip TEXT,
+        detail TEXT DEFAULT '{}',
+        created_at TEXT NOT NULL
+    )
+    """,
+    # 20. 任务队列
+    """
+    CREATE TABLE IF NOT EXISTS task_queue (
+        id TEXT PRIMARY KEY,
+        experiment_id TEXT,
+        task_type TEXT NOT NULL,
+        payload TEXT DEFAULT '{}',
+        priority INTEGER NOT NULL DEFAULT 5,
+        status TEXT NOT NULL DEFAULT 'queued',
+        worker_id TEXT,
+        gpu_index INTEGER,
+        enqueued_at TEXT NOT NULL,
+        started_at TEXT,
+        finished_at TEXT,
+        retry_count INTEGER DEFAULT 0,
+        error TEXT
+    )
+    """,
+]
+INDEXES: list[str] = [
+    "CREATE INDEX IF NOT EXISTS idx_project_owner ON project(owner_id)",
+    "CREATE INDEX IF NOT EXISTS idx_member_project ON project_member(project_id)",
+    "CREATE INDEX IF NOT EXISTS idx_dataset_project ON dataset(project_id)",
+    "CREATE INDEX IF NOT EXISTS idx_dv_dataset ON dataset_version(dataset_id)",
+    "CREATE INDEX IF NOT EXISTS idx_image_dv ON image(dataset_version_id, split)",
+    "CREATE INDEX IF NOT EXISTS idx_image_session ON image(capture_session_id)",
+    "CREATE INDEX IF NOT EXISTS idx_annotation_image ON annotation(image_id, task_type)",
+    "CREATE INDEX IF NOT EXISTS idx_model_task ON model(task_type, arch)",
+    "CREATE INDEX IF NOT EXISTS idx_model_sha ON model(weights_sha256)",
+    "CREATE INDEX IF NOT EXISTS idx_experiment_project ON experiment(project_id, task_type, status)",
+    "CREATE INDEX IF NOT EXISTS idx_experiment_created ON experiment(created_at)",
+    "CREATE INDEX IF NOT EXISTS idx_det_exp ON detection_result(experiment_id, is_miss)",
+    "CREATE INDEX IF NOT EXISTS idx_seg_exp ON segmentation_result(experiment_id)",
+    "CREATE INDEX IF NOT EXISTS idx_ranging_exp ON ranging_result(experiment_id, task_type)",
+    "CREATE INDEX IF NOT EXISTS idx_ranging_group ON ranging_result(task_type, category, distance_plan_m)",
+    "CREATE INDEX IF NOT EXISTS idx_ranging_model ON ranging_result(model_name, distance_plan_m)",
+    "CREATE INDEX IF NOT EXISTS idx_ranging_illum ON ranging_result(illumination)",
+    "CREATE INDEX IF NOT EXISTS idx_ranging_source ON ranging_result(source)",
+    "CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_log(action, created_at)",
+    "CREATE INDEX IF NOT EXISTS idx_task_status ON task_queue(status, priority)",
+]
+
+// ==================== core/exceptions.py ====================
+"""平台统一异常。第三方异常一律转为本模块异常，避免泄漏到 API 层。"""
+from __future__ import annotations
+class VisionLabError(Exception):
+    """平台基础异常。"""
+    code = 50000
+    http_status = 500
+    def __init__(self, message: str, detail: dict | None = None) -> None:
+        super().__init__(message)
+        self.message = message
+        self.detail = detail or {}
+    def to_dict(self) -> dict:
+        return {"code": self.code, "message": self.message, "detail": self.detail}
+class ConfigError(VisionLabError):
+    code = 50010
+class CameraError(VisionLabError):
+    code = 50020
+    http_status = 503
+class DatasetError(VisionLabError):
+    code = 50030
+    http_status = 400
+class ModelError(VisionLabError):
+    code = 50040
+    http_status = 400
+class RangingError(VisionLabError):
+    code = 50050
+    http_status = 400
+class NotFoundError(VisionLabError):
+    code = 40400
+    http_status = 404
+class ValidationError(VisionLabError):
+    code = 40000
+    http_status = 400
+class ConflictError(VisionLabError):
+    code = 40900
+    http_status = 409
+class AuthError(VisionLabError):
+    code = 40100
+    http_status = 401
+class PermissionError_(VisionLabError):
+    code = 40300
+    http_status = 403
+class TaskError(VisionLabError):
+    code = 50060
+
+// ==================== core/logging_setup.py ====================
+"""日志：控制台 + 滚动文件双通道（沿用项目 A backend/config.py 的做法）。"""
+from __future__ import annotations
+import logging
+import sys
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
+from .config import settings
+_FORMAT = "[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s"
+_DATEFMT = "%Y-%m-%d %H:%M:%S"
+_ROOT_NAME = "visionlab"
+_configured = False
+def _has_console(logger: logging.Logger) -> bool:
+    return any(
+        isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler)
+        for h in logger.handlers
+    )
+def _has_file(logger: logging.Logger, path: Path) -> bool:
+    target = path.resolve()
+    for h in logger.handlers:
+        if isinstance(h, logging.FileHandler):
+            base = getattr(h, "baseFilename", None)
+            if base and Path(base).resolve() == target:
+                return True
+    return False
+def setup_logging() -> logging.Logger:
+    global _configured
+    logger = logging.getLogger(_ROOT_NAME)
+    if _configured:
+        return logger
+    level = getattr(logging, str(settings.get("logging.level", "INFO")).upper(), logging.INFO)
+    logger.setLevel(level)
+    logger.propagate = False
+    formatter = logging.Formatter(_FORMAT, datefmt=_DATEFMT)
+    if settings.get("logging.console", True) and not _has_console(logger):
+        console = logging.StreamHandler(stream=sys.stdout)
+        console.setFormatter(formatter)
+        logger.addHandler(console)
+    log_path = settings.log_path
+    if not _has_file(logger, log_path):
+        handler = RotatingFileHandler(
+            log_path,
+            maxBytes=int(settings.get("logging.max_bytes", 5 * 1024 * 1024)),
+            backupCount=int(settings.get("logging.backup_count", 5)),
+            encoding="utf-8",
+        )
+        handler.setFormatter(formatter)
+        logger.addHandler(handler)
+    # 让 werkzeug / socketio 的日志也进同一通道
+    for name in ("werkzeug", "socketio", "engineio"):
+        child = logging.getLogger(name)
+        child.handlers = list(logger.handlers)
+        child.setLevel(level)
+        child.propagate = False
+    _configured = True
+    return logger
+def get_logger(name: str = "") -> logging.Logger:
+    setup_logging()
+    return logging.getLogger(f"{_ROOT_NAME}.{name}" if name else _ROOT_NAME)
+class _MemoryHandler(logging.Handler):
+    """内存环形缓冲，供监控页读取最近日志。"""
+    def __init__(self, capacity: int = 500) -> None:
+        super().__init__()
+        self.capacity = capacity
+        self.records: list[dict] = []
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            self.records.append(
+                {
+                    "time": self.formatTime(record, _DATEFMT),
+                    "level": record.levelname,
+                    "module": record.name,
+                    "message": record.getMessage(),
+                }
+            )
+            if len(self.records) > self.capacity:
+                del self.records[: len(self.records) - self.capacity]
+        except Exception:  # pragma: no cover - 日志失败不得影响主流程
+            pass
+_memory = _MemoryHandler()
+def attach_memory_handler() -> _MemoryHandler:
+    logger = setup_logging()
+    if _memory not in logger.handlers:
+        logger.addHandler(_memory)
+    return _memory
+def recent_logs(level: str | None = None, keyword: str | None = None, limit: int = 200) -> list[dict]:
+    attach_memory_handler()
+    items = list(_memory.records)
+    if level:
+        items = [r for r in items if r["level"] == level.upper()]
+    if keyword:
+        key = keyword.lower()
+        items = [r for r in items if key in r["message"].lower() or key in r["module"].lower()]
+    return items[-limit:][::-1]
+
+// ==================== core/storage.py ====================
+"""存储层：相对 URI 解析、哈希、目录组织。禁止在业务代码里出现绝对路径。"""
+from __future__ import annotations
+import hashlib
+import shutil
+from datetime import datetime
+from pathlib import Path
+from .config import settings
+from .exceptions import ValidationError
+def to_uri(path: Path | str) -> str:
+    """绝对路径 -> 相对存储根的 URI（统一用 / 分隔）。"""
+    p = Path(path).resolve()
+    try:
+        rel = p.relative_to(settings.storage_root)
+    except ValueError:
+        return str(p).replace("\\", "/")
+    return str(rel).replace("\\", "/")
+def to_path(uri: str | None) -> Path | None:
+    """相对 URI -> 绝对路径（兼容历史遗留的绝对路径）。"""
+    if not uri:
+        return None
+    raw = str(uri)
+    candidate = Path(raw)
+    if candidate.is_absolute():
+        return candidate
+    return settings.storage_root / raw
+def ensure_dir(path: Path) -> Path:
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+def safe_name(name: str, fallback: str = "item") -> str:
+    keep = []
+    for ch in str(name):
+        if ch.isalnum() or ch in "-_.（）()【】[]":
+            keep.append(ch)
+        elif ch.isspace():
+            keep.append("_")
+    result = "".join(keep).strip("_")
+    return result or fallback
+def timestamp(fmt: str = "%Y%m%d_%H%M%S") -> str:
+    return datetime.now().strftime(fmt)
+def sha256_file(path: Path, chunk: int = 1 << 20) -> str:
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as handle:
+        while True:
+            block = handle.read(chunk)
+            if not block:
+                break
+            digest.update(block)
+    return digest.hexdigest()
+def sha256_bytes(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+def sha256_tree(paths: list[Path], fast_above: int = 300) -> str:
+    """对文件名 + 大小 + 内容做联合哈希，用于数据集内容指纹。
+    文件数超过 fast_above 时退化为「文件名 + 大小 + 修改时间」的元数据指纹，
+    避免对数千张图像逐个读取内容（导入大目录时会慢几个数量级）。
+    """
+    items = sorted(p for p in paths if p and Path(p).exists())
+    digest = hashlib.sha256()
+    fast = len(items) > fast_above
+    for path in items:
+        digest.update(path.name.encode("utf-8", "ignore"))
+        try:
+            stat = path.stat()
+        except OSError:
+            continue
+        digest.update(str(stat.st_size).encode())
+        if fast:
+            digest.update(str(int(stat.st_mtime)).encode())
+        elif path.is_file() and stat.st_size < 8 * 1024 * 1024:
+            digest.update(sha256_file(path).encode())
+    digest.update(f"|n={len(items)}|fast={int(fast)}".encode())
+    return digest.hexdigest()
+def copy_into(src: Path, dest_dir: Path, name: str | None = None) -> Path:
+    if not Path(src).exists():
+        raise ValidationError(f"源文件不存在: {src}")
+    ensure_dir(dest_dir)
+    target = dest_dir / (name or Path(src).name)
+    if Path(src).resolve() != target.resolve():
+        shutil.copy2(src, target)
+    return target
+def human_size(num_bytes: int | float) -> str:
+    value = float(num_bytes or 0)
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if value < 1024 or unit == "TB":
+            return f"{value:.1f} {unit}" if unit != "B" else f"{int(value)} B"
+        value /= 1024
+    return f"{value:.1f} TB"
+def dir_size(path: Path) -> int:
+    total = 0
+    if Path(path).exists():
+        for item in Path(path).rglob("*"):
+            if item.is_file():
+                try:
+                    total += item.stat().st_size
+                except OSError:
+                    pass
+    return total
+def free_space_gb(path: Path | None = None) -> float:
+    target = Path(path) if path else settings.storage_root
+    try:
+        usage = shutil.disk_usage(str(target if target.exists() else target.parent))
+        return round(usage.free / (1024 ** 3), 2)
+    except OSError:
+        return -1.0
+
+// ==================== core/geometry.py ====================
+"""相机几何：针孔模型、反投影、像素与物理量换算。
+平台相对既有实现新增的能力：把"沿光轴深度"扩展为
+（沿光轴深度 depth_m，横向偏移 lateral_m，欧氏距离 euclidean_m）。
+"""
+from __future__ import annotations
+import math
+from dataclasses import dataclass, asdict
+@dataclass
+class Intrinsics:
+    """相机内参。"""
+    fx: float = 640.0
+    fy: float = 640.0
+    ppx: float = 640.0
+    ppy: float = 360.0
+    width: int = 1280
+    height: int = 720
+    model: str = "brown_conrady"
+    coeffs: tuple = (0.0, 0.0, 0.0, 0.0, 0.0)
+    def to_dict(self) -> dict:
+        data = asdict(self)
+        data["coeffs"] = list(self.coeffs)
+        return data
+    @classmethod
+    def from_dict(cls, data: dict | None) -> "Intrinsics":
+        data = data or {}
+        return cls(
+            fx=float(data.get("fx", 640.0)),
+            fy=float(data.get("fy", 640.0)),
+            ppx=float(data.get("ppx", 640.0)),
+            ppy=float(data.get("ppy", 360.0)),
+            width=int(data.get("width", 1280)),
+            height=int(data.get("height", 720)),
+            model=str(data.get("model", "brown_conrady")),
+            coeffs=tuple(data.get("coeffs", (0.0,) * 5)),
+        )
+def deproject(u: float, v: float, depth_m: float, intr: Intrinsics) -> tuple[float, float, float]:
+    """像素坐标 + 沿光轴深度 -> 相机坐标系下的 (X, Y, Z)，单位米。
+    X = (u - ppx) * Z / fx        （横向，右为正）
+    Y = (v - ppy) * Z / fy        （纵向，下为正）
+    Z = depth_m                   （沿光轴）
+    """
+    if depth_m is None or depth_m <= 0:
+        return (0.0, 0.0, 0.0)
+    x = (float(u) - intr.ppx) * depth_m / max(intr.fx, 1e-6)
+    y = (float(v) - intr.ppy) * depth_m / max(intr.fy, 1e-6)
+    return (x, y, depth_m)
+def euclidean(x: float, y: float, z: float) -> float:
+    return math.sqrt(x * x + y * y + z * z)
+def pixel_to_meter_x(pixels: float, depth_m: float, intr: Intrinsics) -> float:
+    """像素横向差 -> 米。"""
+    return abs(pixels) * depth_m / max(intr.fx, 1e-6)
+def estimate_intrinsics_from_fov(width: int, height: int, hfov_deg: float = 87.0) -> Intrinsics:
+    """在无相机时按 D455 彩色视场角估算内参，保证反投影量级合理。"""
+    fx = (width / 2.0) / math.tan(math.radians(hfov_deg) / 2.0)
+    return Intrinsics(fx=fx, fy=fx, ppx=width / 2.0, ppy=height / 2.0, width=width, height=height)
+def depth_stats(depth_m, valid_min: float = 0.3, valid_max: float = 20.0) -> dict:
+    """深度图统计（用 numpy，调用方保证传入 ndarray）。"""
+    import numpy as np
+    arr = np.asarray(depth_m, dtype="float32")
+    valid = arr[(arr >= valid_min) & (arr <= valid_max)]
+    if valid.size == 0:
+        return {"valid_ratio": 0.0, "min_m": 0.0, "max_m": 0.0, "mean_m": 0.0}
+    return {
+        "valid_ratio": float(valid.size / max(arr.size, 1)),
+        "min_m": float(valid.min()),
+        "max_m": float(valid.max()),
+        "mean_m": float(valid.mean()),
+    }
+
+// ==================== core/media.py ====================
+"""图像编解码与叠加渲染。
+说明：OpenCV 的 Hershey 字体不支持中文，因此所有文字叠加统一走 PIL + 系统 CJK 字体；
+无 PIL 或字体时才退回 cv2.putText（此时中文会显示为占位符，但流程不中断）。
+"""
+from __future__ import annotations
+from pathlib import Path
+import cv2
+import numpy as np
+try:
+    from PIL import Image, ImageDraw, ImageFont
+except Exception:  # noqa: BLE001
+    Image = ImageDraw = ImageFont = None
+# 颜色约定（BGR）：检测=蓝系、分割=绿系、测距=橙/红蓝
+COLOR_DETECT = (255, 160, 60)
+COLOR_SEG = (80, 220, 120)
+COLOR_MIN = (60, 60, 255)      # 最近点：红
+COLOR_MAX = (255, 140, 40)     # 最远点：蓝
+COLOR_SAMPLE = (90, 230, 90)   # 普通采样点：绿
+COLOR_LEFT = (255, 200, 0)     # 左边界：青
+COLOR_RIGHT = (200, 0, 255)    # 右边界：品红
+COLOR_TEXT = (255, 255, 255)
+COLOR_TITLE = (0, 220, 255)
+COLOR_WARN = (0, 200, 255)
+_FONT_CANDIDATES = (
+    "msyh.ttc", "msyhbd.ttc", "simhei.ttf", "simsun.ttc", "Deng.ttf",
+    "NotoSansCJK-Regular.ttc", "wqy-zenhei.ttc",
+)
+_FONT_DIRS = (Path("C:/Windows/Fonts"), Path("/usr/share/fonts"), Path("/System/Library/Fonts"))
+_font_cache: dict[int, object] = {}
+def _load_font(size: int):
+    if ImageFont is None:
+        return None
+    size = max(8, int(size))
+    if size in _font_cache:
+        return _font_cache[size]
+    font = None
+    for folder in _FONT_DIRS:
+        if not folder.exists():
+            continue
+        for name in _FONT_CANDIDATES:
+            path = folder / name
+            if path.exists():
+                try:
+                    font = ImageFont.truetype(str(path), size)
+                    break
+                except Exception:  # noqa: BLE001
+                    continue
+        if font is not None:
+            break
+    _font_cache[size] = font
+    return font
+def text_size(text: str, size: int = 16) -> tuple[int, int]:
+    font = _load_font(size)
+    if font is None:
+        (w, h), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, size / 28.0, 1)
+        return int(w), int(h)
+    box = font.getbbox(text)
+    return int(box[2] - box[0]), int(box[3] - box[1])
+def draw_text_items(image: np.ndarray, items: list[dict]) -> np.ndarray:
+    """批量绘制文字（单次 PIL 往返，避免每行一次图像转换）。
+    items: [{"text": str, "xy": (x, y), "color": (b,g,r), "size": int,
+             "bg": (b,g,r) | None, "padding": int}]
+    """
+    if not items:
+        return image
+    font = _load_font(items[0].get("size", 16))
+    if font is None or Image is None:
+        for item in items:
+            cv2.putText(image, str(item["text"]), tuple(int(v) for v in item["xy"]),
+                        cv2.FONT_HERSHEY_SIMPLEX, item.get("size", 16) / 28.0,
+                        tuple(int(c) for c in item.get("color", COLOR_TEXT)), 1, cv2.LINE_AA)
+        return image
+    pil = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
+    drawer = ImageDraw.Draw(pil)
+    for item in items:
+        text = str(item["text"])
+        x, y = int(item["xy"][0]), int(item["xy"][1])
+        size = int(item.get("size", 16))
+        item_font = _load_font(size) or font
+        color = tuple(int(c) for c in item.get("color", COLOR_TEXT))
+        rgb = (color[2], color[1], color[0])
+        bg = item.get("bg")
+        if bg is not None:
+            pad = int(item.get("padding", 4))
+            w, h = text_size(text, size)
+            bg_rgb = (int(bg[2]), int(bg[1]), int(bg[0]))
+            drawer.rectangle([x - pad, y - pad, x + w + pad, y + h + pad], fill=bg_rgb)
+        drawer.text((x, y), text, font=item_font, fill=rgb)
+    return cv2.cvtColor(np.asarray(pil), cv2.COLOR_RGB2BGR)
+def put_label(image: np.ndarray, text: str, org: tuple[int, int], color=COLOR_TEXT,
+              scale: float = 0.5, thickness: int = 1) -> None:
+    """兼容旧调用：单行文字。"""
+    size = int(round(max(11.0, float(scale) * 28.0)))
+    draw_text_items(image, [{"text": text, "xy": (int(org[0]), int(org[1]) - size), "color": color,
+                             "size": size}])
+# ------------------------------------------------------------------ 基础 IO
+def decode_image(buf: bytes) -> np.ndarray | None:
+    arr = np.frombuffer(buf, dtype=np.uint8)
+    if arr.size == 0:
+        return None
+    return cv2.imdecode(arr, cv2.IMREAD_COLOR)
+def read_image(path: str | Path) -> np.ndarray | None:
+    p = Path(path)
+    if not p.exists():
+        return None
+    data = np.fromfile(str(p), dtype=np.uint8)
+    img = cv2.imdecode(data, cv2.IMREAD_COLOR)
+    if img is None:
+        img = cv2.imread(str(p), cv2.IMREAD_COLOR)
+    return img
+def read_depth16(path: str | Path, depth_scale: float = 0.001) -> np.ndarray | None:
+    """读取 16 位深度 PNG，返回米为单位的 float32 数组。"""
+    p = Path(path)
+    if not p.exists():
+        return None
+    raw = cv2.imread(str(p), cv2.IMREAD_UNCHANGED)
+    if raw is None:
+        return None
+    return raw.astype(np.float32) * float(depth_scale)
+def write_depth16(path: str | Path, depth_m: np.ndarray, depth_scale: float = 0.001) -> Path:
+    """深度图必须以 16 位 PNG 无损保存（不能存成 8 位可视化图）。"""
+    p = Path(path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    raw = np.clip(np.asarray(depth_m, dtype=np.float32) / float(depth_scale), 0, 65535).astype(np.uint16)
+    ok, buf = cv2.imencode(".png", raw)
+    if not ok:
+        raise RuntimeError(f"深度图编码失败: {p}")
+    buf.tofile(str(p))
+    return p
+def write_image(path: str | Path, image: np.ndarray, quality: int = 95) -> Path:
+    p = Path(path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    ext = p.suffix.lower() or ".jpg"
+    params = [int(cv2.IMWRITE_JPEG_QUALITY), int(quality)] if ext in (".jpg", ".jpeg") else []
+    ok, buf = cv2.imencode(ext, image, params)
+    if not ok:
+        raise RuntimeError(f"图像编码失败: {p}")
+    buf.tofile(str(p))
+    return p
+def encode_jpeg(image: np.ndarray, quality: int = 75) -> bytes:
+    ok, buf = cv2.imencode(".jpg", image, [int(cv2.IMWRITE_JPEG_QUALITY), int(quality)])
+    return buf.tobytes() if ok else b""
+def colorize_depth(depth_m: np.ndarray, min_m: float = 0.3, max_m: float = 12.0) -> np.ndarray:
+    """深度伪彩图：近处偏红、远处偏蓝；无效点为黑。"""
+    arr = np.asarray(depth_m, dtype=np.float32)
+    valid = (arr > 0) & np.isfinite(arr)
+    norm = np.zeros_like(arr, dtype=np.float32)
+    span = max(max_m - min_m, 1e-3)
+    norm[valid] = np.clip((arr[valid] - min_m) / span, 0.0, 1.0)
+    gray = ((1.0 - norm) * 255.0).astype(np.uint8)
+    color = cv2.applyColorMap(gray, cv2.COLORMAP_TURBO)
+    color[~valid] = (0, 0, 0)
+    return color
+def resize_keep_ratio(image: np.ndarray, target_w: int, target_h: int) -> np.ndarray:
+    h, w = image.shape[:2]
+    scale = min(target_w / max(w, 1), target_h / max(h, 1))
+    if abs(scale - 1.0) < 1e-3:
+        return image
+    return cv2.resize(image, (max(1, int(w * scale)), max(1, int(h * scale))),
+                      interpolation=cv2.INTER_LINEAR)
+# ------------------------------------------------------------------ 叠加
+def draw_detections(image: np.ndarray, detections: list[dict], panel: bool = True) -> np.ndarray:
+    """画检测框 + 类别 + 置信度 + 距离。"""
+    items: list[dict] = []
+    for det in detections or []:
+        box = det.get("bbox") or det.get("box")
+        if not box or len(box) < 4:
+            continue
+        x1, y1, x2, y2 = [int(v) for v in box[:4]]
+        label = str(det.get("class_name") or det.get("label") or "object")
+        score = det.get("score")
+        text = f"{label} {score:.2f}" if isinstance(score, (int, float)) else label
+        ranging = det.get("ranging") or {}
+        if isinstance(ranging.get("depth_m"), (int, float)):
+            text += f" {ranging['depth_m']:.2f}m"
+        cv2.rectangle(image, (x1, y1), (x2, y2), COLOR_DETECT, 2)
+        if panel:
+            items.append({"text": text, "xy": (x1 + 4, max(0, y1 - 20)), "color": (25, 25, 25),
+                          "size": 15, "bg": COLOR_DETECT, "padding": 3})
+    return draw_text_items(image, items)
+def draw_mask(image: np.ndarray, mask: np.ndarray, alpha: float = 0.35,
+              color=COLOR_SEG, draw_contour: bool = True) -> np.ndarray:
+    """半透明掩膜叠加 + 轮廓。"""
+    if mask is None:
+        return image
+    binary = (np.asarray(mask) > 0).astype(np.uint8)
+    if binary.shape[:2] != image.shape[:2]:
+        binary = cv2.resize(binary, (image.shape[1], image.shape[0]), interpolation=cv2.INTER_NEAREST)
+    overlay = image.copy()
+    overlay[binary > 0] = color
+    out = cv2.addWeighted(overlay, alpha, image, 1 - alpha, 0)
+    if draw_contour:
+        contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+        cv2.drawContours(out, contours, -1, color, 2)
+    return out
+def draw_ranging_points(image: np.ndarray, result: dict) -> np.ndarray:
+    """画边界采样点：普通绿 / 最近红 / 最远蓝；道路左右用青与品红。"""
+    kind = str(result.get("target_kind", "object"))
+    points = result.get("sample_points") or []
+    if isinstance(points, str) or not points:
+        return image
+    near_pt = result.get("_nearest_point")
+    far_pt = result.get("_farthest_point")
+    base_color = {"road_left": COLOR_LEFT, "road_right": COLOR_RIGHT}.get(kind, COLOR_SAMPLE)
+    for pt in points:
+        if not isinstance(pt, (list, tuple)) or len(pt) < 2:
+            continue
+        x, y = int(pt[0]), int(pt[1])
+        if near_pt and (x, y) == (int(near_pt[0]), int(near_pt[1])):
+            continue
+        if far_pt and (x, y) == (int(far_pt[0]), int(far_pt[1])):
+            continue
+        cv2.circle(image, (x, y), 3, base_color, -1)
+    items = []
+    depth = result.get("depth_m")
+    if near_pt:
+        x, y = int(near_pt[0]), int(near_pt[1])

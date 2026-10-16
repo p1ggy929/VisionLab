@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="grid c4" id="kpi-row"></div>
+
+<div class="grid c2">
+  <div class="card">
+    <header><h3>距离—误差曲线（1–20 m）</h3><span class="muted small">按标准距离点分组的平均绝对误差与误差带</span></header>
+    <div id="chart-distance" class="chart"></div>
+  </div>
+  <div class="card">
+    <header><h3>类别误差对比</h3><span class="muted small">11 类道路目标</span></header>
+    <div id="chart-category" class="chart"></div>
+  </div>
+</div>
+
+<div class="grid c2">
+  <div class="card">
+    <header><h3>模型排行榜</h3><span class="muted small">按平均绝对误差升序</span></header>
+    <div id="table-leaderboard"></div>
+  </div>
+  <div class="card">
+    <header><h3>最近实验</h3><a class="small" href="/experiments">查看全部</a></header>
+    <div id="table-recent"></div>
+  </div>
+</div>
+
+<div class="card">
+  <header><h3>高误差样本画廊</h3><span class="muted small">按绝对误差排序，用于定位失效场景</span></header>
+  <div id="gallery-outliers"></div>
+</div>
+{% endblock %}

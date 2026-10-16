@@ -1,0 +1,59 @@
+# ============================================================
+# 模型族登记表
+# 检测：沿用项目 A 的 Ultralytics 命名规则（v11/v12 无 v 前缀）
+# 分割：沿用项目 B 的四个结构与权重命名（*_best.pth / *_last.pth）
+# ============================================================
+
+# 外部权重来源：直接引用两个原项目的权重目录，避免复制 1GB+ 文件。
+# 平台按命名约定在这些目录中查找权重；找不到时给出明确提示。
+# 相对路径按仓库根解析，也可写绝对路径。
+external_sources:
+  detection_pretrained: "E:/2Project/2026dachuang/Yolo_dis_v3源代码/models/pretrained"
+  detection_trained: "E:/2Project/2026dachuang/Yolo_dis_v3源代码/models/trained"
+  detection_runs: "E:/2Project/2026dachuang/Yolo_dis_v3源代码/runs"
+  segmentation: "E:/2Project/2026dachuang/Unet/models"
+  segmentation_best: "E:/2Project/2026dachuang/Unet/best_model"
+  detection_dataset: "E:/2Project/2026dachuang/Yolo_dis_v3源代码/datasets"
+  segmentation_dataset: "E:/2Project/2026dachuang/Unet/dataset"
+
+detection:
+  framework: "ultralytics"
+  families:
+    v8:
+      arch_prefix: "yolov8"
+      sizes: ["n", "s", "m", "l"]
+    v9:
+      arch_prefix: "yolov9"
+      sizes: ["t", "s", "m", "c"]
+    v10:
+      arch_prefix: "yolov10"
+      sizes: ["n", "s", "m", "l"]
+    v11:
+      arch_prefix: "yolo11"
+      sizes: ["n", "s", "m", "l"]
+    v12:
+      arch_prefix: "yolo12"
+      sizes: ["n", "s", "m", "l"]
+  # 权重模式：pretrained 仅用官方权重 / trained 仅用自训练 / dual 两者融合去重
+  weight_modes: ["pretrained", "trained", "dual"]
+
+segmentation:
+  framework: "pytorch"
+  models:
+    unet:
+      label: "UNet"
+      class_path: "algorithms.segmentation.models.unet:UNet"
+      weight_prefix: "Unet"
+    resunet:
+      label: "ResUNet"
+      class_path: "algorithms.segmentation.models.resunet:ResUNet"
+      weight_prefix: "resunet"
+    att_resunet:
+      label: "Attention-ResUNet"
+      class_path: "algorithms.segmentation.models.att_resunet:AttResUNet"
+      weight_prefix: "Atteresunet"
+    unetv2:
+      label: "UNetV2 (PVTv2)"
+      class_path: "algorithms.segmentation.models.unetv2:UNetV2"
+      weight_prefix: "UNetV2"
+  train_scales: [100, 200, 300, 400, 500, 600, 700, 800, 900, 1000]

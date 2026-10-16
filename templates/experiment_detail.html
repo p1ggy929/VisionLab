@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card" id="exp-head"></div>
+
+<div class="card">
+  <header><h3>指标概览</h3></header>
+  <div id="exp-stats"></div>
+  <div id="exp-chart" class="chart" style="margin-top:12px"></div>
+</div>
+
+<div class="grid c2">
+  <div class="card">
+    <header><h3>实验配置快照</h3></header>
+    <div id="exp-config"></div>
+  </div>
+  <div class="card">
+    <header><h3>指标</h3></header>
+    <div id="exp-metrics"></div>
+  </div>
+</div>
+
+<div class="card">
+  <header><h3>测距记录（含真值）</h3><span class="muted small">最多 100 条</span></header>
+  <div id="exp-records"></div>
+</div>
+
+<div class="card">
+  <header><h3>复现清单 run_manifest.json</h3>
+    <span class="muted small">代码 / 环境 / 硬件 / 数据 / 模型 / 超参</span></header>
+  <div id="exp-manifest"></div>
+</div>
+{% endblock %}

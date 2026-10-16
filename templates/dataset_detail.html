@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card" id="dataset-head"></div>
+
+<div class="card">
+  <header><h3>版本列表</h3>
+    <span class="muted small">版本冻结后才允许用于训练，保证实验可复现</span></header>
+  <div id="version-list"></div>
+</div>
+
+<div class="card">
+  <header><h3>样本浏览</h3><span class="muted small">点击「浏览」加载前 36 张</span></header>
+  <div id="image-grid"></div>
+</div>
+{% endblock %}

@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>登录 · 视界智研</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+<div class="login-wrap">
+  <div class="login-card">
+    <h1>视界智研</h1>
+    <div class="sub">基于双目视觉测距与目标检测算法实验平台 · v{{ app_version }}</div>
+
+    <label class="field"><span>用户名</span><input id="login-user" value="admin" autocomplete="username"></label>
+    <label class="field"><span>密码</span><input id="login-pwd" type="password" value="admin123" autocomplete="current-password"></label>
+    <button class="primary" id="login-btn" style="width:100%">登 录</button>
+    <div id="login-msg" class="small" style="margin-top:10px;min-height:18px"></div>
+    <div class="login-tip">
+      首次启动的默认账号为 <b>admin / admin123</b>，登录后请立即在「系统设置」中修改密码。<br>
+      无 RealSense 设备时平台自动使用合成场景，全部功能仍可演示。
+    </div>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/api.js') }}"></script>
+<script>
+  const btn = document.getElementById('login-btn');
+  const msg = document.getElementById('login-msg');
+
+  async function doLogin() {
+    msg.textContent = '';
+    const username = document.getElementById('login-user').value.trim();
+    const password = document.getElementById('login-pwd').value;
+    if (!username || !password) { msg.textContent = '请输入用户名和密码'; return; }
+    btn.disabled = true;
+    btn.textContent = '登录中...';
+    try {
+      const response = await fetch('/api/v1/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: username, password: password }),
+        credentials: 'same-origin',
+      });
+      const data = await response.json();
+      if (data.code !== 0) {
+        msg.textContent = data.message || '登录失败';
+        msg.style.color = '#ff9c96';
+      } else {
+        VL.API.setToken(data.data.token, data.data.user);
+        const next = new URLSearchParams(location.search).get('next') || '/';
+        location.href = next;
+        return;
+      }
+    } catch (error) {
+      msg.textContent = '网络错误：' + error.message;
+      msg.style.color = '#ff9c96';
+    }
+    btn.disabled = false;
+    btn.textContent = '登 录';
+  }
+
+  btn.onclick = doLogin;
+  document.addEventListener('keydown', function (e) { if (e.key === 'Enter') doLogin(); });
+</script>
+</body>
+</html>

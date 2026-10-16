@@ -1,0 +1,87 @@
+{
+  "camera_id": null,
+  "name": "e2e_calib",
+  "intrinsics": {
+    "fx": 674.4192801798159,
+    "fy": 674.4192801798159,
+    "ppx": 640.0,
+    "ppy": 360.0,
+    "width": 1280,
+    "height": 720,
+    "model": "brown_conrady",
+    "coeffs": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ]
+  },
+  "extrinsics": {
+    "baseline_m": null,
+    "note": "由 RealSense 出厂外参提供"
+  },
+  "depth_scale": 0.001,
+  "rms_reprojection_px": 4.284768666687221,
+  "depth_check": {
+    "ground_plane": {
+      "alpha": 0.001185815302291666,
+      "beta": -0.37922654542633677,
+      "valid": true,
+      "horizon_v": 319.80237115633145
+    },
+    "samples": [
+      {
+        "actual_m": 1.0,
+        "measured_m": 2.1245,
+        "abs_error_m": 1.1245,
+        "rel_error": 1.1245
+      },
+      {
+        "actual_m": 2.0,
+        "measured_m": 2.1245,
+        "abs_error_m": 0.1245,
+        "rel_error": 0.0622
+      },
+      {
+        "actual_m": 3.0,
+        "measured_m": 2.6293,
+        "abs_error_m": -0.3707,
+        "rel_error": 0.1236
+      },
+      {
+        "actual_m": 4.0,
+        "measured_m": 3.3735,
+        "abs_error_m": -0.6265,
+        "rel_error": 0.1566
+      },
+      {
+        "actual_m": 5.0,
+        "measured_m": 4.0505,
+        "abs_error_m": -0.9495,
+        "rel_error": 0.1899
+      },
+      {
+        "actual_m": 10.0,
+        "measured_m": 6.7913,
+        "abs_error_m": -3.2087,
+        "rel_error": 0.3209
+      },
+      {
+        "actual_m": 15.0,
+        "measured_m": 8.7758,
+        "abs_error_m": -6.2242,
+        "rel_error": 0.4149
+      },
+      {
+        "actual_m": 20.0,
+        "measured_m": 10.2467,
+        "abs_error_m": -9.7533,
+        "rel_error": 0.4877
+      }
+    ],
+    "mean_abs_error_m": 2.7977,
+    "note": "深度平面校验：按相机高度与焦距推算标靶所在图像行，读取该处深度与真值对比"
+  },
+  "created_by": "admin"
+}

@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ page_title }} · {{ app_short|default('视界智研') }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>👁</text></svg>">
+  <script src="{{ url_for('static', filename='vendor/plotly/plotly.min.js') }}"></script>
+  <script>window.VISIONLAB = {page: "{{ page }}", version: "{{ app_version }}", hasSocket: {{ 'true' if has_socketio else 'false' }}};</script>
+</head>
+<body data-page="{{ page }}">
+
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark">视</span>
+    <div class="brand-text">
+      <strong>{{ app_short|default('视界智研') }}</strong>
+      <small>双目视觉测距与目标检测算法实验平台</small>
+    </div>
+  </div>
+
+  <div class="topbar-center">
+    <label class="inline-field">
+      <span>项目</span>
+      <select id="global-project"></select>
+    </label>
+    <div class="mode-switch" id="global-mode">
+      <button data-mode="detection">目标检测</button>
+      <button data-mode="segmentation">道路分割</button>
+      <button data-mode="both" class="active">双策略同跑</button>
+    </div>
+  </div>
+
+  <div class="topbar-right">
+    <span class="pill" id="camera-status" title="相机状态"><i class="dot"></i><span>检测中…</span></span>
+    <span class="pill" id="task-badge" title="任务队列">任务 <b>0</b></span>
+    <span class="pill" id="server-badge" title="平台版本">v{{ app_version }}</span>
+    {% if user %}
+    <div class="user-menu">
+      <button id="user-toggle">{{ user.display_name or user.username }} ▾</button>
+      <div class="user-dropdown" id="user-dropdown">
+        <div class="muted">{{ user.username }} · {{ user.role }}</div>
+        <a href="/settings">系统设置</a>
+        <a href="#" id="change-password-link">修改密码</a>
+        <a href="#" id="logout-link">退出登录</a>
+      </div>
+    </div>
+    {% else %}
+    <a class="pill" href="/login">登录</a>
+    {% endif %}
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <nav>
+      <a class="nav-item {{ 'active' if page == 'dashboard' else '' }}" href="/">
+        <span class="ico">▤</span>工作台
+      </a>
+      {% for group in nav %}
+      <div class="nav-group">{{ group.group }}</div>
+      {% for item in group['items'] %}
+      <a class="nav-item {{ 'active' if page == item.page else '' }}" href="{{ nav_url(item.page) }}">
+        <span class="ico">{{ nav_icon(item.page) }}</span>{{ item.label }}
+      </a>
+      {% endfor %}
+      {% endfor %}
+    </nav>
+    <div class="sidebar-foot">
+      <div class="muted small">运行环境</div>
+      <div id="env-line" class="small"></div>
+    </div>
+  </aside>
+
+  <main class="content">
+    <div class="page-head">
+      <h1>{{ page_title }}</h1>
+      <div class="page-head-actions" id="page-actions"></div>
+    </div>
+    {% block content %}{% endblock %}
+  </main>
+</div>
+
+<div id="toast-container"></div>
+
+<div id="modal-root" class="modal-root hidden">
+  <div class="modal-mask" data-close="1"></div>
+  <div class="modal">
+    <header><h3 id="modal-title">标题</h3><button class="icon-btn" data-close="1">✕</button></header>
+    <div class="modal-body" id="modal-body"></div>
+    <footer id="modal-footer"></footer>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/api.js') }}"></script>
+<script src="{{ url_for('static', filename='js/ui.js') }}"></script>
+<script src="{{ url_for('static', filename='js/pages.js') }}"></script>
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    if (window.VL) { VL.boot(); }
+  });
+</script>
+</body>
+</html>

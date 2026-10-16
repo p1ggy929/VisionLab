@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card" id="filter-bar"></div>
+<div class="grid c5" id="analysis-kpi"></div>
+
+<div class="grid c2">
+  <div class="card">
+    <header><h3>距离—误差曲线</h3><span class="muted small">含 ±1 标准差误差带</span></header>
+    <div id="chart-distance" class="chart"></div>
+  </div>
+  <div class="card">
+    <header><h3>类别 × 距离 误差热力图</h3></header>
+    <div id="chart-heatmap" class="chart"></div>
+  </div>
+</div>
+
+<div class="grid c3">
+  <div class="card"><header><h3>按类别</h3></header><div id="chart-category" class="chart"></div></div>
+  <div class="card"><header><h3>按目标尺寸组</h3></header><div id="chart-size" class="chart"></div></div>
+  <div class="card"><header><h3>按光照条件</h3></header><div id="chart-illum" class="chart"></div></div>
+</div>
+
+<div class="card">
+  <header><h3>误差校正</h3>
+    <span class="muted small">线性 / 比率 / 分段三类模型，输出 RMSE 前后对比</span></header>
+  <div id="calib-panel"></div>
+  <div id="chart-calibration" class="chart" style="margin-top:10px"></div>
+</div>
+
+<div class="grid c2">
+  <div class="card"><header><h3>按模型分组</h3></header><div id="table-model"></div></div>
+  <div class="card"><header><h3>高误差样本（异常值）</h3></header><div id="table-outliers"></div></div>
+</div>
+
+<div class="card">
+  <header><h3>测距记录明细</h3><span class="muted small">可按维度筛选、修正真值、导出 CSV</span></header>
+  <div id="table-records"></div>
+</div>
+{% endblock %}

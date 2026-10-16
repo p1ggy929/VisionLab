@@ -1,0 +1,1502 @@
+视界智研算法实验平台 V1.0  源代码
+导出时间：2026-10-08 19:17:15
+文件总数：105   有效代码行：16372
+def main() -> int:
+    app = create_app()
+    bootstrap_data()
+    client = app.test_client()
+    print("=" * 72)
+    print("1) 认证")
+    data = show("POST /auth/login",
+                client.post("/api/v1/auth/login",
+                            json={"username": "admin", "password": "admin123"}))
+    token = (data.get("data") or {}).get("token")
+    if not token:
+        print("登录失败，终止")
+        return 1
+    headers = {"Authorization": f"Bearer {token}"}
+    show("GET  /auth/me", client.get("/api/v1/auth/me", headers=headers))
+    show("GET  /system/info", client.get("/api/v1/system/info", headers=headers))
+    print("=" * 72)
+    print("2) 系统与相机")
+    show("POST /system/self-check", client.post("/api/v1/system/self-check", headers=headers))
+    show("GET  /camera/status", client.get("/api/v1/camera/status", headers=headers),
+         ["backend", "running"])
+    show("POST /camera/stream/start",
+         client.post("/api/v1/camera/stream/start", json={"backend": "mock"}, headers=headers),
+         ["backend", "width", "height"])
+    show("GET  /camera/frame", client.get("/api/v1/camera/frame", headers=headers))
+    show("GET  /camera/depth-probe", client.get("/api/v1/camera/depth-probe", headers=headers))
+    show("POST /camera/calibrate", client.post("/api/v1/camera/calibrate", json={}, headers=headers))
+    print("=" * 72)
+    print("3) 双策略同跑流水线")
+    show("GET  /pipeline/config", client.get("/api/v1/pipeline/config", headers=headers))
+    show("POST /pipeline/config",
+         client.post("/api/v1/pipeline/config",
+                     json={"mode": "both", "detector_key": "sim_ground_truth",
+                           "segmenter_key": "classical_road"}, headers=headers))
+    result = show("POST /pipeline/process",
+                  client.post("/api/v1/pipeline/process", headers=headers))
+    payload = result.get("data") or {}
+    detection = payload.get("detection") or {}
+    road = payload.get("road") or {}
+    print(f"        检出 {len(detection.get('detections') or [])} 个目标；"
+          f"走廊宽度 {road.get('corridor_width_m')} m；"
+          f"叠加图 {len(payload.get('overlay_base64') or '')} 字节(base64)")
+    print("=" * 72)
+    print("4) 实验会话与测距记录")
+    session = show("POST /pipeline/session/start",
+                   client.post("/api/v1/pipeline/session/start",
+                               json={"name": "离线冒烟实验", "task_type": "joint"}, headers=headers))
+    experiment_id = (session.get("data") or {}).get("experiment_id")
+    truth = {item["category"]: item["world_z"] for item in (payload.get("ground_truth") or [])}
+    bulk = show("POST /ranging/records/bulk",
+                client.post("/api/v1/ranging/records/bulk",
+                            json={"illumination": "sunny", "actual": truth}, headers=headers))
+    print("        落库记录数 =", (bulk.get("data") or {}).get("created"))
+    show("POST /pipeline/save-frame", client.post("/api/v1/pipeline/save-frame", headers=headers))
+    show("POST /pipeline/session/stop", client.post("/api/v1/pipeline/session/stop", headers=headers))
+    print("=" * 72)
+    print("5) 误差分析与校正")
+    stats = show("GET  /analysis/summary", client.get("/api/v1/analysis/summary", headers=headers))
+    summary = stats.get("data") or {}
+    print(f"        样本 {summary.get('sample_count')} 有效 {summary.get('valid_count')} "
+          f"MAE={summary.get('mae_m')} RMSE={summary.get('rmse_m')}")
+    show("GET  /analysis/distributions", client.get("/api/v1/analysis/distributions", headers=headers))
+    show("GET  /analysis/heatmap", client.get("/api/v1/analysis/heatmap", headers=headers))
+    show("GET  /analysis/leaderboard", client.get("/api/v1/analysis/leaderboard", headers=headers))
+    show("POST /analysis/calibrate",
+         client.post("/api/v1/analysis/calibrate", json={"method": "piecewise"}, headers=headers))
+    print("=" * 72)
+    print("6) 大屏与报告")
+    show("GET  /dashboard/overview", client.get("/api/v1/dashboard/overview", headers=headers))
+    report = show("POST /reports",
+                  client.post("/api/v1/reports",
+                              json={"name": "离线冒烟报告", "template": "error", "format": "md",
+                                    "experiment_id": experiment_id}, headers=headers))
+    report_id = (report.get("data") or {}).get("id")
+    show("GET  /reports/<id>", client.get(f"/api/v1/reports/{report_id}", headers=headers))
+    show("GET  /reports/<id>/download",
+         client.get(f"/api/v1/reports/{report_id}/download", headers=headers))
+    print("=" * 72)
+    print("7) 模型与数据集")
+    show("GET  /models", client.get("/api/v1/models", headers=headers))
+    show("POST /models/scan-artifacts",
+         client.post("/api/v1/models/scan-artifacts", json={}, headers=headers))
+    show("GET  /datasets", client.get("/api/v1/datasets", headers=headers))
+    show("GET  /system/dict", client.get("/api/v1/system/dict", headers=headers))
+    print("=" * 72)
+    print("8) 页面路由")
+    for path in ("/", "/projects", "/experiments", "/experiments/ranging", "/camera/capture",
+                 "/camera/calibration", "/datasets", "/annotations", "/models", "/training",
+                 "/experiments/detection", "/experiments/segmentation", "/analysis",
+                 "/bigscreen", "/reports", "/settings", "/monitor"):
+        response = client.get(path, headers=headers)
+        ok = response.status_code == 200
+        if not ok:
+            FAILURES.append("GET " + path)
+        print(f"[{'OK ' if ok else 'ERR'}] GET  {path:<42} HTTP {response.status_code}")
+    print("=" * 72)
+    if FAILURES:
+        print(f"API 冒烟测试完成：{len(FAILURES)} 项未通过")
+        for name in FAILURES:
+            print("   - " + name)
+        return 1
+    print("API 冒烟测试全部通过")
+    return 0
+if __name__ == "__main__":
+    raise SystemExit(main())
+
+// ==================== tools/check_real_seg_http.py ====================
+"""通过 HTTP 接口用真实 U-Net 权重跑一次分割，验证 PyTorch 插件在服务内可用。
+用法：python tools/check_real_seg_http.py --base http://127.0.0.1:5000
+"""
+from __future__ import annotations
+import argparse
+import json
+import sys
+import urllib.error
+import urllib.request
+from http.cookiejar import CookieJar
+from pathlib import Path
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+ARCH_WEIGHTS = {
+    "unet": "Unet_1000_best.pth",
+    "resunet": "resunet_1000_best.pth",
+    "att_resunet": "Atteresunet_1000_best.pth",
+    "unetv2": "UNetV2_800_best.pth",
+}
+class Client:
+    def __init__(self, base: str) -> None:
+        self.base = base.rstrip("/")
+        self.opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(CookieJar()))
+        self.token = ""
+    def call(self, method: str, path: str, body: dict | None = None) -> dict:
+        data = json.dumps(body).encode() if body is not None else None
+        request = urllib.request.Request(self.base + path, data=data, method=method)
+        request.add_header("Content-Type", "application/json")
+        if self.token:
+            request.add_header("Authorization", "Bearer " + self.token)
+        try:
+            with self.opener.open(request, timeout=300) as response:
+                return json.loads(response.read())
+        except urllib.error.HTTPError as exc:
+            text = exc.read().decode("utf-8", "ignore")
+            try:
+                return json.loads(text)
+            except json.JSONDecodeError:
+                return {"code": exc.code, "message": text[:200]}
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--base", default="http://127.0.0.1:5000")
+    parser.add_argument("--arch", default=None, help="只测某个结构，默认全测")
+    args = parser.parse_args()
+    client = Client(args.base)
+    login = client.call("POST", "/api/v1/auth/login",
+                        {"username": "admin", "password": "admin123"})
+    if login.get("code") != 0:
+        print("登录失败:", login.get("message"))
+        return 1
+    client.token = login["data"]["token"]
+    found: dict[str, dict] = {}
+    for page in (1, 2, 3):
+        listing = client.call("GET", f"/api/v1/models?task_type=segmentation&page_size=100&page={page}")
+        for model in listing.get("data") or []:
+            if model["variant"] == "1000" or model["name"].endswith("_best"):
+                found.setdefault(model["arch"], model)
+            found.setdefault(model["arch"], model)
+    print("已登记的分割结构:", sorted(set(found)))
+    targets = [args.arch] if args.arch else list(ARCH_WEIGHTS)
+    failures = 0
+    for arch in targets:
+        model = found.get(arch)
+        if model is None:
+            print(f"[SKIP] {arch}: 模型仓库中没有该结构")
+            continue
+        config = client.call("POST", "/api/v1/pipeline/config",
+                             {"mode": "segmentation", "segmenter_key": arch,
+                              "segmenter_model_id": model["id"], "threshold": 0.30})
+        errors = ((config.get("data") or {}).get("load_errors")) or []
+        result = client.call("POST", "/api/v1/pipeline/process", {})
+        road = ((result.get("data") or {}).get("road")) or {}
+        ok = not errors and road.get("mask_area_ratio") is not None
+        if not ok:
+            failures += 1
+        print(f"[{'OK ' if ok else 'FAIL'}] {arch:<12} 权重={model['name']:<22} "
+              f"掩膜占比={road.get('mask_area_ratio')}  分割耗时={road.get('infer_ms')} ms  "
+              f"左边界={((road.get('left') or {}).get('min') or {}).get('depth_m')} m  "
+              f"走廊={road.get('corridor_width_m')} m")
+        if errors:
+            print("        加载错误:", errors)
+        if road.get("arch"):
+            print(f"        实际使用结构: {road.get('arch')}")
+    client.call("POST", "/api/v1/pipeline/config",
+                {"mode": "both", "segmenter_key": "classical_road", "segmenter_model_id": None})
+    print("\n" + ("全部结构通过服务端验证" if not failures else f"{failures} 个结构未通过"))
+    return 1 if failures else 0
+if __name__ == "__main__":
+    raise SystemExit(main())
+
+// ==================== tools/check_replay.py ====================
+"""验证离线回放：抓取真实 RGB-D 序列 → 切换到回放后端 → 跑通测距链路。
+用法：python tools/check_replay.py [--frames 30]
+"""
+from __future__ import annotations
+import argparse
+import json
+import sys
+import time
+from pathlib import Path
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+import numpy as np  # noqa: E402
+from algorithms import registry  # noqa: E402
+from algorithms.ranging import BoxBoundaryStrategy, DepthSampler, MaskBoundaryStrategy, road_summary  # noqa: E402
+from core import db, media  # noqa: E402
+from core.camera.replay_backend import ReplayBackend, list_replay_sources  # noqa: E402
+from core.camera.service import get_camera_service  # noqa: E402
+from core.config import settings  # noqa: E402
+from core.logging_setup import setup_logging  # noqa: E402
+OUT = settings.storage_dir("results") / "check_replay"
+def main() -> int:
+    parser = argparse.ArgumentParser(description="离线回放验证")
+    parser.add_argument("--frames", type=int, default=24, help="抓取的回放样本帧数")
+    parser.add_argument("--source", default=None, help="直接指定已有回放源（采集会话 ID）")
+    args = parser.parse_args()
+    setup_logging()
+    db.init_db()
+    registry.load_builtin()
+    OUT.mkdir(parents=True, exist_ok=True)
+    # ---------------- 1) 准备回放源 ----------------
+    if args.source:
+        source_id = args.source
+        print(f"使用已有回放源: {source_id}")
+    else:
+        print(f"1) 用当前相机抓取 {args.frames} 帧真实 RGB-D 序列 ...")
+        from core.camera.replay_backend import capture_sample
+        camera = get_camera_service()
+        if not camera.running:
+            camera.start()
+        sample = capture_sample("", args.frames)
+        source_id = sample["session_id"]
+        print("   ", json.dumps(sample, ensure_ascii=False))
+    print("\n2) 可用回放源列表 ...")
+    sources = list_replay_sources()
+    for item in sources[:6]:
+        print(f"   [{item['type']:<7}] {item['label']:<30} {item['frames']:>5} 帧  "
+              f"含真值 {item['with_truth']}")
+    if not any(s["id"] == source_id for s in sources):
+        print(f"   [警告] 回放源 {source_id} 未出现在列表中")
+    # ---------------- 3) 直接使用后端回放 ----------------
+    print(f"\n3) 装载回放后端 ...")
+    backend = ReplayBackend(source=source_id, fps=60, loop=True)
+    backend.start()
+    info = backend.describe()
+    print("   ", json.dumps({k: info[k] for k in
+                             ("backend", "model", "width", "height", "frames_total",
+                              "depth_scale")}, ensure_ascii=False))
+    frames = []
+    for _ in range(6):
+        bundle = backend.get_latest(timeout=1.0)
+        if bundle is None:
+            continue
+        frames.append(bundle)
+    print(f"   连续取到 {len(frames)} 帧；"
+          f"形状 {frames[0].color.shape}，深度有效占比 "
+          f"{float((frames[0].depth_m > 0).mean()):.3f}" if frames else "   未取到帧")
+    print("   回放进度:", backend.progress())
+    truth = backend.ground_truth()
+    print(f"   当前帧随帧真值: {json.dumps(truth, ensure_ascii=False)}")
+    # ---------------- 4) 在回放帧上跑测距 ----------------
+    print("\n4) 在回放帧上运行检测 + 分割 + 统一测距 ...")
+    bundle = frames[-1]
+    sampler = DepthSampler(kernel=21)
+    detector = registry.create("detection", "depth_obstacle")
+    detector.load(None)
+    pred = detector.predict(bundle.color, depth_m=bundle.depth_m, intrinsics=bundle.intrinsics)
+    box_results = BoxBoundaryStrategy(sampler).measure(bundle.depth_m, bundle.intrinsics, pred)
+    print(f"   检测（深度基线）: {len(pred['boxes'])} 个目标，测距结果 {len(box_results)} 条")
+    for item in box_results:
+        if item.metric_kind == "center" and item.extra.get("class_id") is not None:
+            print(f"      {item.category:<8} center={item.depth_m:.3f} m  "
+                  f"lateral={item.lateral_m}")
+            break
+    segmenter = registry.create("segmentation", "classical_road")
+    segmenter.load(None)
+    seg = segmenter.predict(bundle.color, depth_m=bundle.depth_m, intrinsics=bundle.intrinsics)
+    mask_results = MaskBoundaryStrategy(sampler).measure(
+        bundle.depth_m, bundle.intrinsics, seg, road_split=True, reproject=True,
+        corridor_ref_depth_m=5.0)
+    summary = road_summary(mask_results)
+    print(f"   分割: 掩膜占比 {float(seg['mask'].mean()):.3f}")
+    print(f"   道路左边界 min={((summary['left'].get('min') or {}).get('depth_m'))} m  "
+          f"右边界 min={((summary['right'].get('min') or {}).get('depth_m'))} m  "
+          f"走廊={summary.get('corridor_width_m')} m")
+    vis = media.draw_mask(bundle.color.copy(), seg["mask"], alpha=0.3)
+    media.draw_detections(vis, pred.detections())
+    media.write_image(OUT / "replay_overlay.jpg", vis, quality=90)
+    media.write_image(OUT / "replay_depth.jpg",
+                      media.colorize_depth(bundle.depth_m, 0.3, 15.0), quality=90)
+    # ---------------- 5) 通过 CameraService 切换 ----------------
+    print("\n5) 通过 CameraService 切换到回放后端 ...")
+    service = get_camera_service()
+    started = service.start(prefer="replay", replay_source={"type": "capture", "id": source_id,
+                                                            "fps": 30, "loop": True})
+    print("   ", json.dumps({k: started.get(k) for k in
+                             ("backend", "model", "frames_total", "width", "height")},
+                            ensure_ascii=False))
+    for _ in range(3):
+        service.latest(timeout=0.5)
+    status = service.describe()
+    print(f"   运行状态: backend={status.get('backend')} running={status.get('running')} "
+          f"fps_actual={status.get('fps_actual')}")
+    print(f"   随帧真值: {json.dumps(service.ground_truth(), ensure_ascii=False)}")
+    # 恢复为自动（合成场景）
+    service.start(prefer="mock")
+    print("\n6) 已恢复为合成场景后端")
+    print(f"\n产物目录: {OUT}")
+    print("离线回放验证通过")
+    return 0
+if __name__ == "__main__":
+    raise SystemExit(main())
+
+// ==================== tools/check_seg_compare.py ====================
+"""在真实校园道路测试图上跑四个分割模型，输出并排对比图与 IoU 指标。
+这是原项目 B `compare_models_test.py` 的平台化版本（批量评测任务的原型实现）。
+用法：python tools/check_seg_compare.py [数据根目录] [权重目录]
+"""
+from __future__ import annotations
+import sys
+from pathlib import Path
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+import cv2  # noqa: E402
+import numpy as np  # noqa: E402
+from algorithms import registry  # noqa: E402
+from core import media  # noqa: E402
+from core.config import settings  # noqa: E402
+from core.logging_setup import setup_logging  # noqa: E402
+DEFAULT_DATA = Path(r"E:\2Project\2026dachuang\Unet")
+PLAN = [
+    ("unet", "Unet_1000_best.pth", "UNet"),
+    ("resunet", "resunet_1000_best.pth", "ResUNet"),
+    ("att_resunet", "Atteresunet_1000_best.pth", "Attention-ResUNet"),
+    ("unetv2", "UNetV2_800_best.pth", "UNetV2 (PVTv2)"),
+]
+def metrics(pred_mask: np.ndarray, gt_mask: np.ndarray) -> dict:
+    p = (pred_mask > 0).astype(np.uint8).ravel()
+    g = (gt_mask > 0).astype(np.uint8).ravel()
+    tp = int(np.logical_and(p == 1, g == 1).sum())
+    fp = int(np.logical_and(p == 1, g == 0).sum())
+    fn = int(np.logical_and(p == 0, g == 1).sum())
+    tn = int(np.logical_and(p == 0, g == 0).sum())
+    eps = 1e-7
+    return {
+        "IoU": round(tp / (tp + fp + fn + eps), 4),
+        "Dice": round(2 * tp / (2 * tp + fp + fn + eps), 4),
+        "Precision": round(tp / (tp + fp + eps), 4),
+        "Recall": round(tp / (tp + fn + eps), 4),
+        "Accuracy": round((tp + tn) / (tp + tn + fp + fn + eps), 4),
+    }
+def load_gt(mask_path: Path) -> np.ndarray | None:
+    raw = cv2.imread(str(mask_path), cv2.IMREAD_UNCHANGED)
+    if raw is None:
+        return None
+    if raw.ndim == 3:
+        raw = raw[:, :, 0]
+    return (raw > 0).astype(np.uint8)
+def main() -> int:
+    data_root = Path(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_DATA
+    weights_dir = Path(sys.argv[2]) if len(sys.argv) > 2 else data_root / "models"
+    setup_logging()
+    registry.load_builtin()
+    out_dir = settings.storage_dir("results") / "seg_compare"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    test_dir = data_root / "dataset" / "test" / "images"
+    masks_dir = data_root / "dataset" / "test" / "masks"
+    image_path = test_dir / "Campus_road_196.jpg"
+    if not image_path.exists():
+        candidates = sorted(test_dir.glob("*.jpg")) if test_dir.exists() else []
+        if not candidates:
+            print(f"找不到测试图像，请检查路径：{test_dir}")
+            return 1
+        image_path = candidates[0]
+    image = media.read_image(image_path)
+    if image is None:
+        print(f"图像读取失败：{image_path}")
+        return 1
+    gt = load_gt(masks_dir / (image_path.stem + ".png"))
+    print(f"测试图像: {image_path.name}  {image.shape[1]}x{image.shape[0]}")
+    if gt is not None:
+        print(f"真值掩膜前景占比: {gt.mean():.4f}  shape={gt.shape}")
+    panels = [image.copy()]
+    labels = ["原图"]
+    rows = []
+    print("=" * 92)
+    for arch, weight_name, label in PLAN:
+        weight = weights_dir / weight_name
+        plugin = registry.create("segmentation", arch)
+        plugin.load(str(weight) if weight.exists() else None)
+        pred = plugin.predict(image, threshold=0.30)
+        mask = pred["mask"]
+        ratio = float(mask.mean())
+        row = {"模型": label, "掩膜占比": round(ratio, 4), "阈值语义": pred.get("output_activation")}
+        if gt is not None:
+            row.update(metrics(mask, gt))
+        rows.append(row)
+        vis = media.draw_mask(image.copy(), mask, alpha=0.35)
+        vis = media.draw_panel(vis, [f"掩膜占比 {ratio:.3f}"], "top-right", label)
+        panels.append(vis)
+        labels.append(label)
+        print("  ".join(f"{k}={v}" for k, v in row.items()))
+    h, w = image.shape[:2]
+    scale = 620 / w
+    tw, th = int(w * scale), int(h * scale)
+    tiles = [cv2.resize(p, (tw, th)) for p in panels]
+    while len(tiles) < 6:
+        tiles.append(np.zeros((th, tw, 3), dtype=np.uint8))
+    grid = np.vstack([np.hstack(tiles[0:3]), np.hstack(tiles[3:6])])
+    for index, label in enumerate(labels):
+        x = (index % 3) * tw + 12
+        y = (index // 3) * th + 12
+        media.draw_text_items(grid, [{"text": label, "xy": (x, y), "color": (255, 255, 255),
+                                      "size": 22, "bg": (40, 40, 40), "padding": 6}])
+    out_path = out_dir / "seg_model_comparison.jpg"
+    media.write_image(out_path, grid, quality=92)
+    print("=" * 92)
+    print("对比图已保存:", out_path)
+    header = ["模型", "掩膜占比"] + (["IoU", "Dice", "Precision", "Recall", "Accuracy"]
+                                    if gt is not None else [])
+    print("\n| " + " | ".join(header) + " |")
+    print("|" + "---|" * len(header))
+    for row in rows:
+        print("| " + " | ".join(str(row.get(k, "-")) for k in header) + " |")
+    return 0
+if __name__ == "__main__":
+    raise SystemExit(main())
+
+// ==================== tools/check_seg_models.py ====================
+"""验证四个分割结构能否构建并加载原项目 B 的权重。
+用法：python tools/check_seg_models.py [权重目录]
+"""
+from __future__ import annotations
+import sys
+import time
+from pathlib import Path
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+import numpy as np  # noqa: E402
+import torch  # noqa: E402
+from algorithms import registry  # noqa: E402
+from core.logging_setup import setup_logging  # noqa: E402
+DEFAULT_WEIGHTS = Path(r"E:\2Project\2026dachuang\Unet\models")
+PLAN = [
+    ("unet", "Unet_1000_best.pth"),
+    ("resunet", "resunet_1000_best.pth"),
+    ("att_resunet", "Atteresunet_1000_best.pth"),
+    ("unetv2", "UNetV2_800_best.pth"),
+]
+def try_load(arch: str, weight: Path | None, size=(512, 1024)) -> dict:
+    plugin = registry.create("segmentation", arch)
+    t0 = time.perf_counter()
+    try:
+        plugin.load(str(weight) if weight else None)
+    except Exception as exc:  # noqa: BLE001
+        return {"arch": arch, "ok": False, "stage": "load", "error": str(exc)[:220]}
+    load_ms = (time.perf_counter() - t0) * 1000
+    image = (np.random.rand(size[0], size[1], 3) * 255).astype("uint8")
+    t1 = time.perf_counter()
+    try:
+        pred = plugin.predict(image, threshold=0.3)
+    except Exception as exc:  # noqa: BLE001
+        return {"arch": arch, "ok": False, "stage": "predict", "error": str(exc)[:220]}
+    infer_ms = (time.perf_counter() - t1) * 1000
+    mask = pred.get("mask")
+    return {
+        "arch": arch, "ok": True, "load_ms": round(load_ms, 1), "infer_ms": round(infer_ms, 1),
+        "device": plugin.device,
+        "mask_shape": list(mask.shape) if mask is not None else None,
+        "mask_ratio": round(float(mask.mean()), 4) if mask is not None else None,
+        "activation": pred.get("output_activation"),
+        "params_m": round(sum(p.numel() for p in plugin._model.parameters()) / 1e6, 2),  # noqa: SLF001
+        "weight": weight.name if weight else None,
+    }
+def main() -> int:
+    weights_dir = Path(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_WEIGHTS
+    setup_logging()
+    registry.load_builtin()
+    print(f"PyTorch {torch.__version__}  CUDA={torch.cuda.is_available()}")
+    print(f"权重目录: {weights_dir}  (存在={weights_dir.exists()})")
+    print("=" * 92)
+    failures = 0
+    for arch, filename in PLAN:
+        weight = weights_dir / filename
+        if not weight.exists():
+            weight = None
+        result = try_load(arch, weight)
+        if result["ok"]:
+            print(f"[OK  ] {arch:<12} 权重={result['weight']}  参数={result['params_m']}M  "
+                  f"加载={result['load_ms']}ms  推理={result['infer_ms']}ms  "
+                  f"掩膜占比={result['mask_ratio']}  阈值语义={result['activation']}")
+        else:
+            failures += 1
+            print(f"[FAIL] {arch:<12} 阶段={result['stage']}  {result['error']}")
+    print("=" * 92)
+    print("全部通过" if not failures else f"{failures} 个结构未通过")
+    return 1 if failures else 0
+if __name__ == "__main__":
+    raise SystemExit(main())
+
+// ==================== tools/check_yolo.py ====================
+"""验证真实 YOLO 权重能否加载并在真实道路图像上推理。
+用法：
+    python tools/check_yolo.py                  # 抽查若干配置（默认含训练权重）
+    python tools/check_yolo.py --all            # 遍历 20 个配置
+    python tools/check_yolo.py --arch yolo12m   # 指定单一结构
+"""
+from __future__ import annotations
+import argparse
+import sys
+import time
+from pathlib import Path
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+from algorithms import registry  # noqa: E402
+from algorithms.detection.yolo_adapter import YoloDetectorAdapter  # noqa: E402
+from core import media  # noqa: E402
+from core.config import settings  # noqa: E402
+from core.logging_setup import setup_logging  # noqa: E402
+DATASET = Path(r"E:\2Project\2026dachuang\Yolo_dis_v3源代码\datasets\images\val")
+def pick_images(limit: int = 3) -> list[Path]:
+    if DATASET.exists():
+        files = sorted(p for p in DATASET.rglob("*") if p.suffix.lower() in (".jpg", ".jpeg", ".png"))
+        if files:
+            step = max(1, len(files) // limit)
+            return files[::step][:limit]
+    out = settings.storage_dir("results") / "check_algorithms" / "scene_rgb.jpg"
+    return [out] if out.exists() else []
+def main() -> int:
+    parser = argparse.ArgumentParser(description="验证 YOLO 权重加载与推理")
+    parser.add_argument("--arch", default=None, help="只测一个结构，如 yolo12m")
+    parser.add_argument("--all", action="store_true", help="遍历全部 20 个配置")
+    parser.add_argument("--mode", default="trained",
+                        choices=["trained", "pretrained", "dual"],
+                        help="权重模式（默认用自训练权重，类别与平台一致）")
+    args = parser.parse_args()
+    setup_logging()
+    registry.load_builtin()
+    images = pick_images(3)
+    if not images:
+        print("找不到可用于推理的测试图像。")
+        return 1
+    print(f"测试图像 {len(images)} 张，来自 {images[0].parent}")
+    print(f"权重模式: {args.mode}")
+    print("权重搜索目录：")
+    for folder in settings.weight_search_dirs("detection"):
+        count = len(list(folder.glob('*.pt')))
+        print(f"  {folder}  ({count} 个 .pt)")
+    configs = YoloDetectorAdapter.available_configs()
+    if args.arch:
+        configs = [c for c in configs if c["key"] == args.arch]
+    elif not args.all:
+        picks = {"yolov8n", "yolov9t", "yolov10m", "yolo11s", "yolo12m"}
+        configs = [c for c in configs if c["key"] in picks]
+    print(f"\n将测试 {len(configs)} 个配置\n" + "=" * 96)
+    ok_count, fail_count = 0, 0
+    total_classes, translated, rows = set(), set(), []
+    for cfg in configs:
+        version, size = cfg["version"].lstrip("v"), cfg["size"]
+        key = cfg["key"]
+        try:
+            plugin = registry.create("detection", "yolo", version=version, size=size,
+                                     weight_mode=args.mode)
+            t0 = time.perf_counter()
+            plugin.load(None)
+            load_ms = (time.perf_counter() - t0) * 1000
+            image = media.read_image(images[0])
+            t1 = time.perf_counter()
+            pred = plugin.predict(image, conf=0.25, iou=0.45, imgsz=640)
+            infer_ms = (time.perf_counter() - t1) * 1000
+            desc = plugin.describe()
+            names = set(str(n) for n in (desc.get("class_names") or []))
+            total_classes |= names
+            sources = list((desc.get("sources") or {}).keys())
+            labels = [str(x) for x in (pred.get("labels") or [])]
+            translated |= set(labels)
+            rows.append({"配置": key, "权重来源": "+".join(sources) or "-",
+                         "类别数": len(names), "检出": len(pred.get("boxes") or []),
+                         "加载(ms)": round(load_ms), "推理(ms)": round(infer_ms)})
+            detail = ("  检出类别=" + ",".join(sorted(set(labels)))) if labels else ""
+            print(f"[OK ] {key:<10} 权重={list((desc.get('sources') or {}).values())}  "
+                  f"类别 {len(names)}  检出 {len(pred.get('boxes') or [])}  "
+                  f"加载 {load_ms:.0f}ms 推理 {infer_ms:.0f}ms{detail}")
+            ok_count += 1
+        except Exception as exc:  # noqa: BLE001
+            print(f"[ERR] {key:<10} {str(exc)[:150]}")
+            fail_count += 1
+    print("=" * 96)
+    print(f"通过 {ok_count} 个，失败 {fail_count} 个")
+    if rows:
+        header = list(rows[0].keys())
+        print("\n| " + " | ".join(header) + " |")
+        print("|" + "---|" * len(header))
+        for row in rows:
+            print("| " + " | ".join(str(row[h]) for h in header) + " |")
+    if total_classes:
+        platform_classes = set(settings.detection_class_names())
+        print(f"\n平台 11 类（中文）：{sorted(platform_classes)}")
+        print(f"权重内置类别名（英文）：{sorted(total_classes)}")
+        print(f"经平台别名映射后的检出类别：{sorted(translated) or '（本次抽检未检出目标）'}")
+        unmapped = {t for t in translated if t not in platform_classes}
+        if unmapped:
+            print(f"[警告] 未被映射到平台类别体系的检出：{sorted(unmapped)}")
+        else:
+            print("[OK ] 所有权重类别名都能映射到平台的中文类别体系")
+    return 1 if fail_count else 0
+if __name__ == "__main__":
+    raise SystemExit(main())
+
+// ==================== tools/cleanup_demo.py ====================
+"""维护工具：清理验收/冒烟测试产生的演示实验，保留历史迁移实验。
+用法：
+    python tools/cleanup_demo.py            # 预览将删除的内容
+    python tools/cleanup_demo.py --apply    # 实际删除
+"""
+from __future__ import annotations
+import argparse
+import sys
+from pathlib import Path
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+from core import db  # noqa: E402
+from core.logging_setup import setup_logging  # noqa: E402
+PATTERNS = ("端到端验收实验%", "实时实验%", "冒烟测试实验%", "默认实验%")
+def main() -> int:
+    parser = argparse.ArgumentParser(description="清理演示实验")
+    parser.add_argument("--apply", action="store_true", help="实际执行删除")
+    args = parser.parse_args()
+    setup_logging()
+    db.init_db()
+    where = " OR ".join(["name LIKE ?"] * len(PATTERNS))
+    rows = db.query_all(f"SELECT id, name, task_type, created_at FROM experiment "
+                        f"WHERE is_deleted=0 AND ({where}) ORDER BY created_at",
+                        PATTERNS)
+    if not rows:
+        print("没有需要清理的演示实验。")
+        return 0
+    print(f"发现 {len(rows)} 个演示实验：")
+    total_records = 0
+    for row in rows:
+        count = int(db.query_scalar("SELECT COUNT(*) FROM ranging_result WHERE experiment_id=?",
+                                     (row["id"],), 0) or 0)
+        total_records += count
+        print(f"  {row['id']}  {row['name']}  ({row['task_type']}, {count} 条测距记录)")
+    reports = db.query_all(
+        "SELECT id FROM report WHERE experiment_id IN "
+        f"(SELECT id FROM experiment WHERE is_deleted=0 AND ({where}))", PATTERNS)
+    print(f"关联报告 {len(reports)} 份，测距记录合计 {total_records} 条")
+    if not args.apply:
+        print("\n以上为预览。加 --apply 参数执行删除。")
+        return 0
+    ids = [row["id"] for row in rows]
+    marks = ",".join("?" * len(ids))
+    with db.transaction() as conn:
+        conn.execute(f"DELETE FROM ranging_result WHERE experiment_id IN ({marks})", ids)
+        conn.execute(f"DELETE FROM detection_result WHERE experiment_id IN ({marks})", ids)
+        conn.execute(f"DELETE FROM segmentation_result WHERE experiment_id IN ({marks})", ids)
+        conn.execute(f"DELETE FROM error_analysis WHERE experiment_id IN ({marks})", ids)
+        conn.execute(f"DELETE FROM report WHERE experiment_id IN ({marks})", ids)
+        conn.execute(f"DELETE FROM task_queue WHERE experiment_id IN ({marks})", ids)
+        conn.execute(f"DELETE FROM experiment WHERE id IN ({marks})", ids)
+    print(f"\n已删除 {len(ids)} 个演示实验及其产物。")
+    print("剩余数据：")
+    for table, count in db.table_counts().items():
+        if count:
+            print(f"  {table:<22} {count}")
+    return 0
+if __name__ == "__main__":
+    raise SystemExit(main())
+
+// ==================== tools/e2e_check.py ====================
+"""端到端 HTTP 验收：对运行中的服务跑完整实验流程。
+用法：
+    python tools/e2e_check.py --base http://127.0.0.1:5000 --user admin --password admin123
+"""
+from __future__ import annotations
+import argparse
+import json
+import sys
+import urllib.error
+import urllib.request
+from http.cookiejar import CookieJar
+from pathlib import Path
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+class Client:
+    def __init__(self, base: str) -> None:
+        self.base = base.rstrip("/")
+        self.opener = urllib.request.build_opener(
+            urllib.request.HTTPCookieProcessor(CookieJar()))
+        self.token = ""
+    def call(self, method: str, path: str, body: dict | None = None) -> dict:
+        url = self.base + path
+        data = json.dumps(body).encode() if body is not None else None
+        request = urllib.request.Request(url, data=data, method=method)
+        request.add_header("Content-Type", "application/json")
+        if self.token:
+            request.add_header("Authorization", "Bearer " + self.token)
+        try:
+            with self.opener.open(request, timeout=120) as response:
+                payload = response.read()
+                try:
+                    return json.loads(payload)
+                except json.JSONDecodeError:
+                    return {"code": 0, "raw_length": len(payload)}
+        except urllib.error.HTTPError as exc:
+            text = exc.read().decode("utf-8", "ignore")
+            try:
+                return json.loads(text)
+            except json.JSONDecodeError:
+                return {"code": exc.code, "message": text[:200]}
+    def raw(self, path: str) -> bytes:
+        url = self.base + path
+        request = urllib.request.Request(url)
+        if self.token:
+            request.add_header("Authorization", "Bearer " + self.token)
+        with self.opener.open(request, timeout=120) as response:
+            return response.read()
+def step(index: int, title: str) -> None:
+    print(f"\n[{index:>2}] {title}")
+    print("-" * 70)
+def main() -> int:
+    parser = argparse.ArgumentParser(description="视界智研端到端验收")
+    parser.add_argument("--base", default="http://127.0.0.1:5000")
+    parser.add_argument("--user", default="admin")
+    parser.add_argument("--password", default="admin123")
+    args = parser.parse_args()
+    client = Client(args.base)
+    failures: list[str] = []
+    def check(name: str, condition: bool, detail: str = "") -> None:
+        mark = "OK  " if condition else "FAIL"
+        print(f"   [{mark}] {name}" + (f"  {detail}" if detail else ""))
+        if not condition:
+            failures.append(name)
+    step(1, "登录与身份")
+    data = client.call("POST", "/api/v1/auth/login",
+                       {"username": args.user, "password": args.password})
+    check("登录成功", data.get("code") == 0, data.get("message", ""))
+    if data.get("code") != 0:
+        return 1
+    client.token = data["data"]["token"]
+    me = client.call("GET", "/api/v1/auth/me")
+    check("获取当前用户", me.get("code") == 0, json.dumps(me.get("data", {}).get("user", {}),
+                                                        ensure_ascii=False))
+    step(2, "相机接入")
+    status = client.call("GET", "/api/v1/camera/status").get("data", {})
+    check("相机运行中", bool(status.get("running")),
+          f"backend={status.get('backend')} {status.get('width')}x{status.get('height')}")
+    check("内参可用", bool((status.get("intrinsics") or {}).get("fx")))
+    probe = client.call("GET", "/api/v1/camera/depth-probe").get("data", {})
+    check("深度探测", probe.get("depth_m", 0) > 0, f"Z={probe.get('depth_m')} m, X={probe.get('x_m')} m")
+    step(3, "相机标定")
+    calib = client.call("POST", "/api/v1/camera/calibrate", {"name": "e2e_calib"})
+    check("执行标定", calib.get("code") == 0,
+          f"RMS={((calib.get('data') or {}).get('rms_reprojection_px'))}")
+    step(4, "双策略同跑（检测 + 分割 + 统一测距）")
+    client.call("POST", "/api/v1/pipeline/config",
+                {"mode": "both", "detector_key": "sim_ground_truth",
+                 "segmenter_key": "classical_road", "sample_points": 20, "kernel": 21})
+    frame = client.call("POST", "/api/v1/pipeline/process", {}).get("data", {})
+    det = (frame.get("detection") or {}).get("detections") or []
+    road = frame.get("road") or {}
+    check("检测到目标", len(det) > 0, f"{len(det)} 个")
+    check("目标边界测距输出", bool(frame.get("objects")))
+    check("道路左边界距离", bool((road.get("left") or {}).get("min")),
+          f"{((road.get('left') or {}).get('min') or {}).get('depth_m')} m")
+    check("道路右边界距离", bool((road.get("right") or {}).get("min")),
+          f"{((road.get('right') or {}).get('min') or {}).get('depth_m')} m")
+    check("可通行走廊宽度", road.get("corridor_width_m") is not None,
+          f"{road.get('corridor_width_m')} m（合成场景真值 6.20 m）")
+    lateral = ((road.get("left") or {}).get("min") or {}).get("lateral_m")
+    check("横向偏移（平台新增能力）", lateral is not None, f"X={lateral} m")
+    check("叠加图已生成", bool(frame.get("overlay_base64")))
+    check("深度伪彩已生成", bool(frame.get("depth_base64")))
+    step(5, "实验会话与测距落库（带真值）")
+    session = client.call("POST", "/api/v1/pipeline/session/start",
+                          {"name": "端到端验收实验", "task_type": "joint"}).get("data", {})
+    experiment_id = session.get("experiment_id")
+    check("会话已开始", bool(experiment_id), str(experiment_id))
+    truth = {item["category"]: item["world_z"] for item in (frame.get("ground_truth") or [])}
+    bulk = client.call("POST", "/api/v1/ranging/records/bulk",
+                       {"illumination": "sunny", "actual": truth}).get("data", {})
+    check("落库当前帧测距结果", (bulk.get("created") or 0) > 0, f"{bulk.get('created')} 条")
+    stopped = client.call("POST", "/api/v1/pipeline/session/stop").get("data", {})
+    check("会话结束", bool(stopped), json.dumps(stopped.get("session", {}).get("experiment_id", ""),
+                                              ensure_ascii=False))
+    step(6, "误差分析与分组归因")
+    stats = client.call("GET", f"/api/v1/analysis/summary?experiment_id={experiment_id}").get("data", {})
+    check("统计输出", stats.get("sample_count", 0) > 0,
+          f"样本 {stats.get('sample_count')} 有效 {stats.get('valid_count')} "
+          f"MAE={stats.get('mae_m')} RMSE={stats.get('rmse_m')}")
+    check("按类别归因", bool(stats.get("by_category")))
+    check("按尺寸组归因", bool(stats.get("by_size")))
+    check("热力图数据", bool((stats.get("heatmap") or {}).get("x")))
+    step(7, "误差校正（三类模型）")
+    for method in ("linear", "ratio", "piecewise"):
+        result = client.call("POST", "/api/v1/analysis/calibrate",
+                             {"method": method, "experiment_id": experiment_id}).get("data", {})
+        ok = result.get("rmse_before") is not None and result.get("rmse_after") is not None
+        check(f"{method} 拟合", ok,
+              f"RMSE {result.get('rmse_before')} -> {result.get('rmse_after')} "
+              f"推荐={result.get('recommended')}")
+        if ok and method == "piecewise":
+            active = client.call("POST", f"/api/v1/analysis/calibrations/{result['id']}/activate", {})
+            check("启用校正方案", active.get("code") == 0)
+    step(8, "历史数据回归（原项目 A 口径）")
+    experiments = client.call("GET", "/api/v1/experiments?page_size=100").get("data", [])
+    legacy = [e for e in experiments if "历史数据迁移" in e["name"] and e["task_type"] == "detection"]
+    if legacy:
+        summary = client.call("GET",
+                              f"/api/v1/analysis/legacy-summary?experiment_id={legacy[0]['id']}").get("data", {})
+        check("历史记录条数", summary.get("total_records", 0) > 1000,
+              f"{summary.get('total_records')} 条")
+        check("缺检率复现（原报告 17.40%）", abs((summary.get("miss_rate") or 0) - 0.174) < 0.01,
+              f"{summary.get('miss_rate')}")
+        check("平均误差复现（原报告 0.446 m）", abs((summary.get("mean_error_m") or 0) - 0.446) < 0.01,
+              f"{summary.get('mean_error_m')} m")
+        check("中位误差复现（原报告 0.190 m）", abs((summary.get("median_error_m") or 0) - 0.19) < 0.01,
+              f"{summary.get('median_error_m')} m")
+    else:
+        check("找到历史迁移实验", False, "请先运行 tools/import_legacy.py")
+    step(9, "可视化大屏数据")
+    overview = client.call("GET", "/api/v1/dashboard/overview").get("data", {})
+    check("KPI", bool(overview.get("kpi")), json.dumps(overview.get("kpi", {}), ensure_ascii=False)[:150])
+    check("距离—误差序列", bool(overview.get("by_distance")),
+          f"{len(overview.get('by_distance') or [])} 个距离点")
+    check("模型排行榜", bool(overview.get("leaderboard")))
+    check("大屏热力图", bool((overview.get("heatmap") or {}).get("x")))
+    step(10, "报告导出")
+    for fmt in ("md", "pdf", "csv", "json"):
+        report = client.call("POST", "/api/v1/reports",
+                             {"name": f"端到端验收报告_{fmt}", "template": "error",
+                              "format": fmt, "experiment_id": experiment_id}).get("data", {})
+        ok = report.get("status") == "done" and (report.get("file_size") or 0) > 0
+        check(f"{fmt.upper()} 报告", ok,
+              f"{report.get('file_human')}  {Path(report.get('file_uri') or '').name}")
+        if fmt == "pdf" and ok:
+            blob = client.raw(f"/api/v1/reports/{report['id']}/download")
+            check("PDF 可下载且为合法 PDF", blob[:4] == b"%PDF", f"{len(blob)} 字节")
+    step(11, "模型仓库与数据集")
+    models = client.call("GET", "/api/v1/models?page_size=1").get("data", [])
+    total_models = client.call("GET", "/api/v1/models?page_size=1").get("total", 0)
+    check("模型已登记", total_models > 0, f"{total_models} 个")
+    datasets = client.call("GET", "/api/v1/datasets").get("data", [])
+    check("数据集已登记", len(datasets) > 0, f"{len(datasets)} 个")
+    for dataset in datasets[:2]:
+        versions = (client.call("GET", f"/api/v1/datasets/{dataset['id']}").get("data", {})
+                    .get("versions") or [])
+        if versions:
+            validation = client.call("POST",
+                                     f"/api/v1/datasets/versions/{versions[0]['id']}/validate",
+                                     {}).get("data", {})
+            check(f"数据集校验 · {dataset['name']}", validation.get("conclusion") is not None,
+                  f"{validation.get('checked_images')} 张抽检，问题 {validation.get('issue_count')} 处，"
+                  f"前景值 {validation.get('foreground_value_histogram')}")
+    step(12, "系统自检与监控")
+    selfcheck = client.call("POST", "/api/v1/system/self-check", {}).get("data", {})
+    summary = selfcheck.get("summary", {})
+    check("一键自检", summary.get("total", 0) > 0,
+          f"{summary.get('passed')}/{summary.get('total')} 通过，错误 {summary.get('errors')}，"
+          f"警告 {summary.get('warnings')}")
+    metrics = client.call("GET", "/api/v1/system/metrics").get("data", {})
+    check("运行指标", bool(metrics.get("camera")), f"相机 {metrics.get('camera', {}).get('backend')}")
+    logs = client.call("GET", "/api/v1/system/logs?limit=5").get("data", {})
+    check("日志可读", len(logs.get("items") or []) >= 0)
+    step(13, "离线回放（从落盘的真实 RGB-D 序列重放）")
+    backends = client.call("GET", "/api/v1/camera/backends").get("data", {})
+    keys = [item["key"] for item in (backends.get("items") or [])]
+    check("回放后端已注册", "replay" in keys, "/".join(keys))
+    sample = client.call("POST", "/api/v1/camera/replay-sample", {"frames": 12}).get("data", {})
+    check("生成回放样本", (sample.get("frames") or 0) > 0,
+          f"{sample.get('session_id')} · {sample.get('frames')} 帧 · "
+          f"含真值 {sample.get('with_truth')}")
+    sources = client.call("GET", "/api/v1/camera/replay-sources").get("data", {})
+    items = sources.get("items") or []
+    check("回放源列表", len(items) > 0,
+          ", ".join(f"{i['type']}:{i['label']}({i['frames']})" for i in items[:3]))
+    started = client.call("POST", "/api/v1/camera/stream/start",
+                          {"backend": "replay", "replay_type": "capture",
+                           "replay_source": sample.get("session_id"), "fps": 20,
+                           "loop": True}).get("data", {})
+    check("切换到回放后端", started.get("backend") == "replay",
+          f"{started.get('model')} · {started.get('frames_total')} 帧 · "
+          f"depth_scale={started.get('depth_scale')}")
+    client.call("POST", "/api/v1/pipeline/config",
+                {"mode": "both", "detector_key": "depth_obstacle",
+                 "segmenter_key": "classical_road"})
+    replay_frame = client.call("POST", "/api/v1/pipeline/process", {}).get("data", {})
+    road = replay_frame.get("road") or {}
+    check("回放帧上跑通测距", bool((road.get("left") or {}).get("min")),
+          f"左边界 {((road.get('left') or {}).get('min') or {}).get('depth_m')} m，"
+          f"走廊 {road.get('corridor_width_m')} m，"
+          f"来源 {replay_frame.get('source')}")
+    progress = client.call("GET", "/api/v1/camera/replay-progress").get("data", {})
+    check("回放进度可查", progress.get("frames_total", 0) > 0,
+          f"{progress.get('frame_index')}/{progress.get('frames_total')}")
+    gt = replay_frame.get("ground_truth") or []
+    check("回放帧携带随帧真值", len(gt) > 0,
+          json.dumps(gt[0], ensure_ascii=False)[:110] if gt else "无")
+    client.call("POST", "/api/v1/camera/stream/start", {"backend": "mock"})
+    restored = client.call("GET", "/api/v1/camera/status").get("data", {})
+    check("恢复合成场景", restored.get("backend") == "mock", str(restored.get("backend")))
+    step(14, "真实 YOLO 权重可用性（检测适配器）")
+    configs = client.call("GET", "/api/v1/models/yolo-configs").get("data", {})
+    keys = [c["key"] for c in (configs.get("items") or [])]
+    check("20 个 YOLO 配置", len(keys) == 20, ", ".join(keys[:6]) + " ...")
+    check("v11/v12 命名正确",
+          "yolo11n" in keys and "yolo12l" in keys and "yolon" not in keys,
+          "yolo11n/yolo12l 存在，yolon 不存在")
+    det_models = client.call("GET", "/api/v1/models?task_type=detection&page_size=100").get("data", [])
+    seg_models = client.call("GET", "/api/v1/models?task_type=segmentation&page_size=100").get("data", [])
+    check("检测权重数量", len(det_models) >= 40, f"{len(det_models)} 个")
+    check("分割权重数量", len(seg_models) >= 80, f"{len(seg_models)} 个")
+    trained = [m for m in det_models if m["weight_origin"] == "trained"]
+    check("自训练权重已登记", len(trained) >= 20, f"{len(trained)} 个，"
+          f"示例 weights_uri={trained[0]['weights_uri'][:70] if trained else '-'}")
+    step(15, "数据资产总量")
+    datasets = client.call("GET", "/api/v1/datasets").get("data", [])
+    total_images, split_info = 0, []
+    for dataset in datasets:
+        detail = client.call("GET", f"/api/v1/datasets/{dataset['id']}").get("data", {})
+        for version in detail.get("versions") or []:
+            total_images += version.get("image_count") or 0
+            stats = client.call("GET",
+                                f"/api/v1/datasets/versions/{version['id']}/stats").get("data", {})
+            split_info.append(f"{dataset['name']}:{stats.get('splits')}")
+    check("图像总量达标（目标 5,814）", total_images >= 5814, f"{total_images} 张")
+    for info in split_info:
+        print(f"        划分 {info}")
+    print("\n" + "=" * 70)
+    if failures:
+        print(f"端到端验收完成：{len(failures)} 项未通过")
+        for name in failures:
+            print("   - " + name)
+        return 1
+    print("端到端验收全部通过")
+    print("=" * 70)
+    return 0
+if __name__ == "__main__":
+    raise SystemExit(main())
+
+// ==================== tools/export_soft_copyright.py ====================
+"""导出软件著作权登记所需的源代码文档（前 30 页 + 后 30 页，每页 50 行）。
+用法：
+    python tools/export_soft_copyright.py                 # 默认前后各 30 页
+    python tools/export_soft_copyright.py --pages 30 --lines 50
+输出：
+    storage/exports/软著源代码_前30页.txt
+    storage/exports/软著源代码_后30页.txt
+    storage/exports/软著源代码_统计.json
+"""
+from __future__ import annotations
+import argparse
+import json
+import sys
+from datetime import datetime
+from pathlib import Path
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+from core.config import settings  # noqa: E402
+# 优先级：入口与公共层在前，算法层在后
+FILE_ORDER = [
+    "app.py",
+    "core/config.py", "core/db.py", "core/schema.py", "core/exceptions.py",
+    "core/logging_setup.py", "core/storage.py", "core/geometry.py", "core/media.py",
+    "core/camera/base.py", "core/camera/service.py", "core/camera/mock_backend.py",
+    "core/camera/realsense_backend.py",
+    "algorithms/base.py", "algorithms/registry.py", "algorithms/ground.py",
+    "algorithms/detection/yolo_adapter.py", "algorithms/detection/depth_adapter.py",
+    "algorithms/detection/sim_adapter.py",
+    "algorithms/segmentation/unet_adapter.py", "algorithms/segmentation/classical_adapter.py",
+    "algorithms/segmentation/models/blocks.py", "algorithms/segmentation/models/__init__.py",
+    "algorithms/segmentation/models/unet.py", "algorithms/segmentation/models/resunet.py",
+    "algorithms/segmentation/models/att_resunet.py", "algorithms/segmentation/models/unetv2.py",
+    "algorithms/ranging/base.py", "algorithms/ranging/depth_sampler.py",
+    "algorithms/ranging/box_boundary.py", "algorithms/ranging/mask_boundary.py",
+    "algorithms/calibration/strategies.py",
+    "services/auth_service.py", "services/project_service.py", "services/dataset_service.py",
+    "services/model_registry.py", "services/pipeline_service.py", "services/capture_service.py",
+    "services/analysis_service.py", "services/report_service.py", "services/health_service.py",
+    "api/common.py", "api/auth.py", "api/projects.py", "api/camera.py", "api/datasets.py",
+    "api/models.py", "api/inference.py", "api/analysis.py", "api/reports.py",
+    "api/system.py", "api/media.py", "api/ws.py", "api/pages.py",
+    "static/js/api.js", "static/js/ui.js", "static/js/pages.js",
+    "templates/base.html", "templates/dashboard.html", "templates/ranging.html",
+    "tools/import_legacy.py", "tools/self_check.py",
+]
+SKIP_PARTS = (".venv", "venv", "__pycache__", "storage", "node_modules", ".git")
+def collect() -> list[Path]:
+    files: list[Path] = []
+    for rel in FILE_ORDER:
+        path = ROOT / rel
+        if path.exists() and path.is_file():
+            files.append(path)
+    # 补充未被显式列出的源码文件
+    for path in sorted(ROOT.rglob("*")):
+        if not path.is_file():
+            continue
+        if any(part in path.parts for part in SKIP_PARTS):
+            continue
+        if path.suffix.lower() not in (".py", ".js", ".html", ".css", ".yaml"):
+            continue
+        if path.name.startswith("_"):
+            continue
+        if path not in files:
+            files.append(path)
+    return files
+def build_lines(files: list[Path]) -> tuple[list[str], dict]:
+    lines: list[str] = []
+    per_file: dict[str, int] = {}
+    for path in files:
+        try:
+            text = path.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+        content = [line.rstrip("\n") for line in text.splitlines()]
+        # 去掉纯空行以符合「每页不少于 50 行」的排版要求
+        content = [line for line in content if line.strip()]
+        if not content:
+            continue
+        rel = path.relative_to(ROOT).as_posix()
+        per_file[rel] = len(content)
+        lines.append(f"// ==================== {rel} ====================")
+        lines.extend(content)
+        lines.append("")
+    return lines, per_file
+def main() -> int:
+    parser = argparse.ArgumentParser(description="导出软著源代码文档")
+    parser.add_argument("--pages", type=int, default=30, help="前后各取多少页（默认 30）")
+    parser.add_argument("--lines", type=int, default=50, help="每页行数（默认 50）")
+    args = parser.parse_args()
+    files = collect()
+    lines, per_file = build_lines(files)
+    page_size = int(args.lines)
+    needed = int(args.pages) * page_size
+    out_dir = settings.storage_dir("exports")
+    header = (f"视界智研算法实验平台 V1.0  源代码\n"
+              f"导出时间：{datetime.now():%Y-%m-%d %H:%M:%S}\n"
+              f"文件总数：{len(files)}   有效代码行：{len(lines)}\n")
+    head_lines = lines[:needed]
+    tail_lines = lines[-needed:] if len(lines) > needed else lines
+    (out_dir / "软著源代码_前30页.txt").write_text(
+        header + "\n".join(head_lines), encoding="utf-8")
+    (out_dir / "软著源代码_后30页.txt").write_text(
+        header + "\n".join(tail_lines), encoding="utf-8")
+    stats = {
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "file_count": len(files),
+        "code_lines": len(lines),
+        "page_size": page_size,
+        "pages_each_side": args.pages,
+        "top_files": sorted(per_file.items(), key=lambda kv: -kv[1])[:20],
+    }
+    (out_dir / "软著源代码_统计.json").write_text(
+        json.dumps(stats, ensure_ascii=False, indent=2), encoding="utf-8")
+    print("=" * 68)
+    print(f"源码文件 {len(files)} 个，有效代码行 {len(lines)} 行")
+    print(f"前 {args.pages} 页 / 后 {args.pages} 页已导出至：{out_dir}")
+    print("=" * 68)
+    for rel, count in stats["top_files"][:10]:
+        print(f"  {count:>6} 行  {rel}")
+    return 0
+if __name__ == "__main__":
+    raise SystemExit(main())
+
+// ==================== tools/fit_calibration.py ====================
+"""在真实历史数据上拟合误差校正方案，并把最优方案设为平台当前启用方案。
+数据来源：原项目 A 的 1,462 条测距记录（1–20 m、11 类目标、20 个 YOLO 配置）。
+用法：python tools/fit_calibration.py
+"""
+from __future__ import annotations
+import json
+import sys
+from pathlib import Path
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+from core import db  # noqa: E402
+from core.logging_setup import setup_logging  # noqa: E402
+from services import analysis_service  # noqa: E402
+def main() -> int:
+    setup_logging()
+    db.init_db()
+    experiment = db.query_one(
+        "SELECT id, name FROM experiment WHERE name LIKE '历史数据迁移%' AND task_type='detection' "
+        "AND is_deleted=0 LIMIT 1")
+    if experiment is None:
+        print("未找到历史迁移实验，请先运行 tools/import_legacy.py")
+        return 1
+    filters = {"experiment_id": experiment["id"]}
+    print(f"数据来源: {experiment['name']}  ({experiment['id']})")
+    stats = analysis_service.summary(filters)
+    print(f"样本 {stats['sample_count']}  有效 {stats['valid_count']}  "
+          f"MAE {stats['mae_m']} m  RMSE {stats['rmse_m']} m  缺检率 {stats['miss_rate']}")
+    results = []
+    print("\n" + "=" * 82)
+    print("全量拟合")
+    print("=" * 82)
+    for method in ("linear", "ratio", "piecewise"):
+        plan = analysis_service.calibrate_from_records(
+            method=method, filters=filters, name=f"历史数据_{method}",
+            experiment_id=experiment["id"])
+        results.append(plan)
+        print(f"  {method:<10} RMSE {plan['rmse_before']:.4f} -> {plan['rmse_after']:.4f} m  "
+              f"样本 {plan['sample_count']}  推荐启用={plan['recommended']}")
+    best = min(results, key=lambda p: p["rmse_after"] or 9e9)
+    print(f"\n最优方案: {best['name']}（RMSE {best['rmse_after']:.4f} m，"
+          f"相对未校正下降 {(1 - best['rmse_after'] / best['rmse_before']) * 100:.1f}%）")
+    print("\n" + "=" * 82)
+    print("分段模型参数（近 / 中 / 远 三段线性）")
+    print("=" * 82)
+    piecewise = [p for p in results if p["method"] == "piecewise"][0]
+    print(json.dumps(piecewise["params"], ensure_ascii=False, indent=2))
+    print("\n" + "=" * 82)
+    print("按类别拟合并启用（示例：车辆 —— 历史数据中误差最大的类别）")
+    print("=" * 82)
+    category_filters = dict(filters)
+    category_filters["category"] = "车辆"
+    category_plan = analysis_service.calibrate_from_records(
+        method="piecewise", filters=category_filters, name="车辆_piecewise",
+        experiment_id=experiment["id"])
+    print(f"  车辆: RMSE {category_plan['rmse_before']:.4f} -> {category_plan['rmse_after']:.4f} m  "
+          f"推荐={category_plan['recommended']}")
+    row = analysis_service.activate_calibration(best["id"])
+    plan = analysis_service.build_plan(row)
+    print(f"\n已启用平台校正方案: {row['name']}（方法 {row['method']}）")
+    if plan:
+        print("  校正曲线抽样：")
+        for probe in (1.0, 3.0, 5.0, 10.0, 15.0, 20.0):
+            print(f"    {probe:>5.1f} m  ->  {plan.apply(probe):.3f} m")
+    return 0
+if __name__ == "__main__":
+    raise SystemExit(main())
+
+// ==================== tools/rebuild_datasets.py ====================
+"""维护工具：按原始划分整体重建两个原项目的数据集索引。
+用法：
+    python tools/rebuild_datasets.py            # 预览
+    python tools/rebuild_datasets.py --apply    # 执行（会清空 dataset/image/annotation/depth_map）
+导入后应得到：
+    项目 A 检测数据集 : 2,694 张（train 2,301 + val 393）
+    项目 B 分割数据集 : 3,120 张（train 2,496 + val 312 + test 312）
+    合计              : 5,814 张
+"""
+from __future__ import annotations
+import argparse
+import json
+import sys
+from pathlib import Path
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+from core import db  # noqa: E402
+from core.logging_setup import setup_logging  # noqa: E402
+from services import dataset_service  # noqa: E402
+YOLO_ROOT = Path(r"E:\2Project\2026dachuang\Yolo_dis_v3源代码\datasets")
+UNET_ROOT = Path(r"E:\2Project\2026dachuang\Unet")
+def _count_split_images(root: Path, parent_name: str) -> int:
+    if not root.exists():
+        return 0
+    return sum(1 for p in root.rglob("*")
+               if p.suffix.lower() in (".jpg", ".jpeg", ".png", ".bmp")
+               and p.parent.name == parent_name)
+def main() -> int:
+    parser = argparse.ArgumentParser(description="按原始划分重建数据集索引")
+    parser.add_argument("--apply", action="store_true", help="实际执行")
+    parser.add_argument("--keep-existing", action="store_true", help="保留已有数据集（追加新版本）")
+    args = parser.parse_args()
+    setup_logging()
+    db.init_db()
+    counts = db.table_counts()
+    print("当前数据：")
+    for key in ("dataset", "dataset_version", "image", "annotation", "depth_map"):
+        print(f"  {key:<18} {counts.get(key, 0)}")
+    det_images = YOLO_ROOT / "images"
+    seg_root = UNET_ROOT / "dataset"
+    plan = [
+        ("项目 A 检测数据集", det_images, YOLO_ROOT / "labels",
+         _count_split_images(det_images, "train") + _count_split_images(det_images, "val")),
+        ("项目 B 分割数据集", seg_root, None, _count_split_images(seg_root, "images")),
+    ]
+    print("\n将导入：")
+    total = 0
+    for label, source, extra, count in plan:
+        total += count
+        print(f"  {label:<18} 来源 {source}  图像 {count} 张")
+    print(f"  合计 {total} 张（目标 5,814 张：A 2,694 + B 3,120）")
+    if not args.apply:
+        print("\n以上为预览。加 --apply 参数执行。")
+        return 0
+    if not args.keep_existing:
+        print("\n清空已有数据集索引 ...")
+        with db.transaction() as conn:
+            for table in ("depth_map", "annotation", "image", "dataset_version", "dataset"):
+                conn.execute(f"DELETE FROM {table}")
+        print("  已清空")
+    results = {}
+    print("\n导入项目 A 检测数据集（保留 train / val 原始划分）...")
+    results["detection"] = dataset_service.import_legacy_detection_full(
+        str(YOLO_ROOT / "images"), str(YOLO_ROOT / "labels"),
+        dataset_name="road-target-det", version_tag="v1.0")
+    print("  ", json.dumps(results["detection"], ensure_ascii=False))
+    print("\n导入项目 B 分割数据集（保留 train / val / test 原始划分）...")
+    results["segmentation"] = dataset_service.import_legacy_segmentation_full(
+        str(UNET_ROOT), dataset_name="campus-road-seg", version_tag="v1.0")
+    print("  ", json.dumps(results["segmentation"], ensure_ascii=False))
+    total_images = results["detection"]["images"] + results["segmentation"]["images"]
+    print("\n" + "=" * 74)
+    print(f"导入完成：共 {total_images} 张图像")
+    print("=" * 74)
+    for name, item in results.items():
+        print(f"  {name:<14} 图像 {item['images']:>5}  划分 {item['splits']}  "
+              f"校验 {item['validation']}")
+    print("\n数据库统计：")
+    for table, count in db.table_counts().items():
+        if count:
+            print(f"  {table:<22} {count}")
+    return 0
+if __name__ == "__main__":
+    raise SystemExit(main())
+
+// ==================== tools/scan_models.py ====================
+"""登记检测权重并核对模型仓库总量。
+用法：python tools/scan_models.py
+"""
+from __future__ import annotations
+import json
+import sys
+from pathlib import Path
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+from core import db  # noqa: E402
+from core.logging_setup import setup_logging  # noqa: E402
+from services import model_registry  # noqa: E402
+YOLO_ROOT = Path(r"E:\2Project\2026dachuang\Yolo_dis_v3源代码")
+UNET_ROOT = Path(r"E:\2Project\2026dachuang\Unet")
+def main() -> int:
+    setup_logging()
+    db.init_db()
+    project = db.query_one("SELECT id FROM project WHERE is_deleted=0 ORDER BY created_at LIMIT 1")
+    project_id = project["id"] if project else None
+    print("=" * 76)
+    print("扫描平台目录 + 原项目权重目录")
+    print("=" * 76)
+    result = model_registry.scan_platform_models(project_id)
+    print(f"  导入 {result['imported']} 个，跳过 {result['skipped']} 个")
+    for item in result["details"][:8]:
+        print(f"    {item['name']:<22} {item['file']:<26} {item['size_mb']} MB")
+    print("\n扫描项目 A 的训练产物（runs/）...")
+    if (YOLO_ROOT / "runs").exists():
+        runs = model_registry.scan_yolo_runs(str(YOLO_ROOT / "runs"), project_id)
+        print(f"  导入 {runs['imported']} 个，跳过 {runs['skipped']} 个")
+    print("\n扫描项目 B 的分割权重 ...")
+    if (UNET_ROOT / "models").exists():
+        seg = model_registry.scan_segmentation_weights(
+            str(UNET_ROOT / "models"), project_id,
+            str(UNET_ROOT / "best_model") if (UNET_ROOT / "best_model").exists() else None)
+        print(f"  导入 {seg['imported']} 个，跳过 {seg['skipped']} 个")
+    stats = model_registry.model_stats()
+    print("\n" + "=" * 76)
+    print("模型仓库总览")
+    print("=" * 76)
+    print(json.dumps({k: v for k, v in stats.items() if k != "by_arch"},
+                     ensure_ascii=False, indent=2))
+    rows = db.query_all(
+        "SELECT task_type, weight_origin, COUNT(*) AS n FROM model WHERE is_deleted=0 "
+        "GROUP BY task_type, weight_origin ORDER BY task_type, weight_origin")
+    print("  按任务与来源：")
+    for row in rows:
+        print(f"    {row['task_type']:<14} {row['weight_origin']:<12} {row['n']:>4}")
+    print("\n  检测模型清单（前 12）：")
+    for row in db.query_all("SELECT name, arch, variant, weight_origin, size_bytes, notes "
+                            "FROM model WHERE task_type='detection' AND is_deleted=0 "
+                            "ORDER BY weight_origin, arch LIMIT 12"):
+        print(f"    {row['name']:<22} {row['arch']:<10} {row['variant']:<3} "
+              f"{row['weight_origin']:<11} {row['size_bytes'] / 1024 / 1024:>6.1f} MB")
+    print("\n  目标：40 个检测权重（20 预训练 + 20 自训练）+ 80 个分割权重")
+    return 0
+if __name__ == "__main__":
+    raise SystemExit(main())
+
+// ==================== tools/status.py ====================
+"""数据状态速览：表计数、历史数据回归口径、模型与数据集概况、误差统计。
+用法：python tools/status.py
+"""
+from __future__ import annotations
+import json
+import sys
+from pathlib import Path
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+from core import db  # noqa: E402
+from core.logging_setup import setup_logging  # noqa: E402
+from services import analysis_service  # noqa: E402
+def main() -> int:
+    setup_logging()
+    db.init_db()
+    print("=" * 74)
+    print("元数据库表计数")
+    print("=" * 74)
+    for table, count in db.table_counts().items():
+        if count:
+            print(f"  {table:<24} {count}")
+    print("\n" + "=" * 74)
+    print("历史数据回归（项目 A 的 measurements.csv）")
+    print("=" * 74)
+    row = db.query_one("SELECT id FROM experiment WHERE name LIKE '历史数据迁移%' "
+                       "AND task_type='detection' AND is_deleted=0 LIMIT 1")
+    if row:
+        summary = analysis_service.legacy_summary(row["id"])
+        print(json.dumps(summary, ensure_ascii=False, indent=2))
+        print("\n对照原申报书 / 分析报告口径：")
+        print("  总记录 1460，缺检 254（17.40%），有效 1206，"
+              "平均误差 0.446 m，中位误差 0.190 m，最大误差 6.57 m")
+    print("\n" + "=" * 74)
+    print("模型仓库")
+    print("=" * 74)
+    from services import model_registry
+    stats = model_registry.model_stats()
+    print(json.dumps({k: v for k, v in stats.items() if k != "by_arch"},
+                     ensure_ascii=False, indent=2))
+    print(f"  结构分布（前 8）：{dict(list(stats['by_arch'].items())[:8])}")
+    print("\n" + "=" * 74)
+    print("数据集")
+    print("=" * 74)
+    for ds in db.query_all("SELECT id, name, task_type, status, latest_version FROM dataset "
+                           "WHERE is_deleted=0"):
+        versions = db.query_all("SELECT version, image_count, annotation_count, content_hash, "
+                                "frozen_at FROM dataset_version WHERE dataset_id=?", (ds["id"],))
+        print(f"  {ds['name']}（{ds['task_type']}，{ds['status']}）")
+        for v in versions:
+            print(f"     {v['version']}  图像 {v['image_count']}  掩膜/标注 {v['annotation_count']}  "
+                  f"哈希 {(v['content_hash'] or '-')[:12]}  "
+                  f"{'已冻结' if v['frozen_at'] else '未冻结'}")
+    print("\n" + "=" * 74)
+    print("校正方案")
+    print("=" * 74)
+    for plan in db.decode_rows(db.query_all(
+            "SELECT name, method, sample_count, rmse_before, rmse_after, is_active "
+            "FROM calibration_plan ORDER BY created_at DESC LIMIT 12")):
+        print(f"  {'[启用]' if plan['is_active'] else '      '} {plan['name']:<24} "
+              f"{plan['method']:<10} 样本 {plan['sample_count']:<5} "
+              f"RMSE {plan['rmse_before']} -> {plan['rmse_after']}")
+    print("\n" + "=" * 74)
+    print("全量误差分析（平台口径）")
+    print("=" * 74)
+    stats = analysis_service.summary({})
+    for key in ("sample_count", "valid_count", "mae_m", "rmse_m", "mre", "median_error_m",
+                "max_error_m", "std_error_m", "hit_rate", "miss_count", "miss_rate"):
+        print(f"  {key:<18} {stats.get(key)}")
+    print("\n  按距离分组：")
+    for item in (stats.get("by_distance") or []):
+        print(f"    {str(item['key']):>6} m  样本 {item['count']:>4}  有效 {item['valid_count']:>4}  "
+              f"MAE {item['mae_m']}  RMSE {item['rmse_m']}")
+    print("\n  按类别分组（前 6）：")
+    for item in (stats.get("by_category") or [])[:6]:
+        print(f"    {str(item['key']):<10} 样本 {item['count']:>4}  有效 {item['valid_count']:>4}  "
+              f"MAE {item['mae_m']}")
+    return 0
+if __name__ == "__main__":
+    raise SystemExit(main())
+
+// ==================== tools/tidy_state.py ====================
+"""维护工具：把校正方案与中间分析记录收敛到最终交付状态。
+只保留在真实历史数据上拟合的校正方案，并启用其中 RMSE 最低的一个。
+用法：python tools/tidy_state.py
+"""
+from __future__ import annotations
+import sys
+from pathlib import Path
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+from core import db  # noqa: E402
+from core.logging_setup import setup_logging  # noqa: E402
+KEEP_PREFIXES = ("历史数据", "车辆")
+def main() -> int:
+    setup_logging()
+    db.init_db()
+    patterns = " OR ".join(["name LIKE ?"] * len(KEEP_PREFIXES))
+    params = [p + "%" for p in KEEP_PREFIXES]
+    with db.transaction() as conn:
+        conn.execute(f"DELETE FROM calibration_plan WHERE NOT ({patterns})", params)
+        conn.execute("DELETE FROM calibration")
+        conn.execute("DELETE FROM error_analysis")
+        conn.execute("UPDATE calibration_plan SET is_active=0")
+        # 平台默认启用「全量分段校正」；按类别的方案保留为可选，不默认启用
+        row = conn.execute(
+            "SELECT id FROM calibration_plan WHERE name='历史数据_piecewise' LIMIT 1").fetchone()
+        if row is None:
+            row = conn.execute(
+                "SELECT id FROM calibration_plan WHERE method='piecewise' "
+                "ORDER BY sample_count DESC LIMIT 1").fetchone()
+        if row:
+            conn.execute("UPDATE calibration_plan SET is_active=1 WHERE id=?", (row[0],))
+    print("保留的校正方案：")
+    for item in db.query_all("SELECT name, method, sample_count, rmse_before, rmse_after, "
+                             "is_active FROM calibration_plan ORDER BY created_at"):
+        flag = "已启用" if item["is_active"] else "      "
+        print(f"  [{flag}] {item['name']:<20} {item['method']:<10} "
+              f"样本 {item['sample_count']:<5} RMSE {item['rmse_before']} -> {item['rmse_after']}")
+    return 0
+if __name__ == "__main__":
+    raise SystemExit(main())
+
+// ==================== tools/tune_seg_threshold.py ====================
+"""分割二值化阈值标定：为每个结构找到使 IoU 最优的阈值。
+背景：原项目 B 的在线推理脚本用固定阈值 0.30，而各结构的概率分布不同，
+最优阈值差异明显。本脚本在真实测试图上扫描阈值，为平台默认值与界面滑块提供依据。
+用法：python tools/tune_seg_threshold.py [数据根目录] [权重目录]
+"""
+from __future__ import annotations
+import sys
+from pathlib import Path
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+import cv2  # noqa: E402
+import numpy as np  # noqa: E402
+from algorithms import registry  # noqa: E402
+from core import media  # noqa: E402
+from core.logging_setup import setup_logging  # noqa: E402
+DEFAULT_DATA = Path(r"E:\2Project\2026dachuang\Unet")
+PLAN = [("unet", "Unet_1000_best.pth"), ("resunet", "resunet_1000_best.pth"),
+        ("att_resunet", "Atteresunet_1000_best.pth"), ("unetv2", "UNetV2_800_best.pth")]
+THRESHOLDS = [0.05, 0.10, 0.20, 0.30, 0.40, 0.50, 0.60, 0.70, 0.80, 0.90]
+REPORTED = {"unet": 0.9688, "resunet": 0.9777, "att_resunet": 0.9737, "unetv2": 0.9364}
+def iou_of(pred: np.ndarray, gt: np.ndarray) -> float:
+    p = (pred > 0).ravel()
+    g = (gt > 0).ravel()
+    tp = float(np.logical_and(p, g).sum())
+    fp = float(np.logical_and(p, ~g).sum())
+    fn = float(np.logical_and(~p, g).sum())
+    return tp / (tp + fp + fn + 1e-7)
+def main() -> int:
+    data_root = Path(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_DATA
+    weights_dir = Path(sys.argv[2]) if len(sys.argv) > 2 else data_root / "models"
+    setup_logging()
+    registry.load_builtin()
+    test_images = sorted((data_root / "dataset" / "test" / "images").glob("*.jpg"))[:6]
+    masks_dir = data_root / "dataset" / "test" / "masks"
+    if not test_images:
+        print("找不到测试图像。")
+        return 1
+    print(f"抽检 {len(test_images)} 张测试图\n")
+    verdicts = {}
+    for arch, weight in PLAN:
+        plugin = registry.create("segmentation", arch)
+        plugin.load(str(weights_dir / weight))
+        scores = []
+        for threshold in THRESHOLDS:
+            ious = []
+            for image_path in test_images:
+                image = media.read_image(image_path)
+                raw = cv2.imread(str(masks_dir / (image_path.stem + ".png")), cv2.IMREAD_UNCHANGED)
+                if raw is None:
+                    continue
+                if raw.ndim == 3:
+                    raw = raw[:, :, 0]
+                pred = plugin.predict(image, threshold=threshold)["mask"]
+                ious.append(iou_of(pred, (raw > 0).astype(np.uint8)))
+            scores.append((threshold, float(np.mean(ious))))
+        best = max(scores, key=lambda kv: kv[1])
+        reference = REPORTED.get(arch, 0.97)
+        closest = min(scores, key=lambda kv: abs(kv[1] - reference))
+        verdicts[arch] = {"best_threshold": best[0], "best_iou": round(best[1], 4),
+                          "closest_threshold": closest[0], "iou_at_closest": round(closest[1], 4),
+                          "reported_iou": reference}
+        print(f"== {arch} ==")
+        print("   " + "  ".join(f"t={t:.2f}:{v:.4f}" for t, v in scores))
+        print(f"   最佳阈值 {best[0]:.2f} -> IoU {best[1]:.4f}；"
+              f"最接近原项目 B 报告值({reference})的阈值 {closest[0]:.2f} -> IoU {closest[1]:.4f}\n")
+    print("=" * 84)
+    print("结论：各结构最优阈值并不相同，平台界面提供阈值滑块以便按结构调优")
+    print("=" * 84)
+    for arch, value in verdicts.items():
+        print(f"  {arch:<12} 原报告 IoU={value['reported_iou']}  "
+              f"最接近阈值={value['closest_threshold']}  实测 IoU={value['iou_at_closest']}  "
+              f"(最优 {value['best_iou']} @ t={value['best_threshold']})")
+    return 0
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,121 @@
+# ============================================================
+# 视界智研算法实验平台 · 全局配置
+# 所有可调参数集中在此，业务代码不得硬编码
+# ============================================================
+
+app:
+  name: "视界智研 —— 基于双目视觉测距与目标检测算法实验平台"
+  short_name: "视界智研"
+  version: "1.0.0"
+  code_name: "VisionLab-D455"
+
+server:
+  host: "0.0.0.0"
+  port: 5000
+  debug: false
+  secret_key: "visionlab-dev-secret-change-me"
+  session_hours: 12
+  # 实时推送方式：auto = 有 flask_socketio 就用，否则前端自动降级为轮询
+  realtime: "auto"
+  stream:
+    fps: 15              # 推流到浏览器的帧率
+    jpeg_quality: 75
+    max_width: 960       # 推流图像最大宽度（减小带宽）
+
+storage:
+  root: "storage"        # 相对仓库根目录；可改为绝对路径把大数据放别的盘
+  dirs:
+    datasets: "datasets"
+    captures: "captures"
+    models: "models"
+    runs: "runs"
+    results: "results"
+    calibration: "calibration"
+    reports: "reports"
+    logs: "logs"
+    exports: "exports"
+
+camera:
+  backend: "auto"        # auto | realsense | mock
+  width: 1280
+  height: 720
+  fps: 30
+  # 默认关闭 RealSense 官方滤波，保留原始深度细节（沿用项目 A 的验证结论）
+  # 可选: decimation / spatial / temporal / hole_filling
+  filters: []
+  depth_min_m: 0.3
+  depth_max_m: 20.0
+  mock:
+    # 无相机时的合成 RGB-D 场景（用于开发、教学与答辩兜底演示）
+    enabled_if_no_device: true
+    scene: "campus_road"
+    moving: true
+    noise: 0.004
+    drop_rate: 0.03      # 模拟深度缺失比例
+
+ranging:
+  default_strategy: "box_boundary"
+  kernel: 21             # 局部中位数采样核（奇数，沿用项目 A 的 21）
+  sample_points: 20      # 边界采样点数
+  min_valid_points: 3
+  max_range_m: 20.0
+  min_range_m: 0.3
+  sampler_mode: "median" # median | point
+  distance_plan_m: [1, 2, 3, 4, 5, 10, 15, 20]   # 标准距离点
+  pause_tolerance_m: 0.05
+  pause_timeout_sec: 30
+  road_split: true       # 道路掩膜左右边界分离
+  reproject: true        # 针孔反投影输出横向偏移与欧氏距离
+  corridor_ref_depth_m: 5.0   # 计算可通行走廊宽度的参考前向距离（米）
+
+detection:
+  default_conf: 0.25
+  default_iou: 0.45
+  default_imgsz: 640
+  merge_iou: 0.55        # dual 权重模式融合去重阈值（沿用项目 A）
+  max_det: 100
+  weight_mode: "dual"    # pretrained | trained | dual
+
+segmentation:
+  default_threshold: 0.30   # 沿用项目 B
+  input_width: 1024
+  input_height: 512
+  open_ks: 3
+  close_ks: 3
+  min_area_px: 200
+
+training:
+  epochs: 100
+  batch: 8
+  imgsz: 640
+  lr: 0.0003
+  seed: 42
+  device: "auto"
+  workers: 0
+  max_concurrent: 1       # 任务队列并发数
+
+analysis:
+  hit_rate_threshold: 0.05   # 相对误差 <=5% 记为命中
+  outlier_sigma: 3.0
+  piecewise_bounds_m: [5.0, 15.0]   # 分段校正的近/中/远分界（可配置，不写死）
+  calibration:
+    methods: ["linear", "ratio", "piecewise"]
+    min_samples: 2
+
+report:
+  formats: ["pdf", "csv", "md", "json"]
+  page_size: "A4"
+
+logging:
+  level: "INFO"
+  file: "storage/logs/visionlab.log"
+  max_bytes: 5242880
+  backup_count: 5
+  console: true
+
+security:
+  first_run_admin:
+    username: "admin"
+    password: "admin123"      # 首次启动后请立即修改
+  max_login_failures: 5
+  lock_seconds: 60

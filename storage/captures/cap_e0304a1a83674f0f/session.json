@@ -1,0 +1,752 @@
+{
+  "id": "cap_e0304a1a83674f0f",
+  "name": "回放样本 2026-10-08 19:14",
+  "experiment_id": null,
+  "scene": "campus_road",
+  "illumination": "sunny",
+  "operator": "system",
+  "root": "captures/cap_e0304a1a83674f0f",
+  "started_at": "2026-10-08T19:14:22+08:00",
+  "items": [
+    {
+      "stamp": "20261008_191422_384",
+      "rgb_uri": "captures/cap_e0304a1a83674f0f/rgb/rgb_20261008_191422_384.jpg",
+      "depth_uri": "captures/cap_e0304a1a83674f0f/depth/depth_20261008_191422_384.png",
+      "frame_number": 2,
+      "depth_scale": 0.001,
+      "intrinsics": {
+        "fx": 674.4192801798159,
+        "fy": 674.4192801798159,
+        "ppx": 640.0,
+        "ppy": 360.0,
+        "width": 1280,
+        "height": 720,
+        "model": "brown_conrady",
+        "coeffs": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "illumination": "sunny",
+      "target_size_group": null,
+      "notes": "",
+      "truth": {
+        "actual_distance_m": 2.054,
+        "actual_min_m": null,
+        "actual_max_m": null,
+        "actual_source": "manual",
+        "category": "废瓶子",
+        "notes": "由 mock 后端在抓帧时同步记录的仿真真值"
+      },
+      "created_at": "2026-10-08T19:14:22+08:00"
+    },
+    {
+      "stamp": "20261008_191422_819",
+      "rgb_uri": "captures/cap_e0304a1a83674f0f/rgb/rgb_20261008_191422_819.jpg",
+      "depth_uri": "captures/cap_e0304a1a83674f0f/depth/depth_20261008_191422_819.png",
+      "frame_number": 4,
+      "depth_scale": 0.001,
+      "intrinsics": {
+        "fx": 674.4192801798159,
+        "fy": 674.4192801798159,
+        "ppx": 640.0,
+        "ppy": 360.0,
+        "width": 1280,
+        "height": 720,
+        "model": "brown_conrady",
+        "coeffs": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "illumination": "sunny",
+      "target_size_group": null,
+      "notes": "",
+      "truth": {
+        "actual_distance_m": 2.109,
+        "actual_min_m": null,
+        "actual_max_m": null,
+        "actual_source": "manual",
+        "category": "废瓶子",
+        "notes": "由 mock 后端在抓帧时同步记录的仿真真值"
+      },
+      "created_at": "2026-10-08T19:14:22+08:00"
+    },
+    {
+      "stamp": "20261008_191423_258",
+      "rgb_uri": "captures/cap_e0304a1a83674f0f/rgb/rgb_20261008_191423_258.jpg",
+      "depth_uri": "captures/cap_e0304a1a83674f0f/depth/depth_20261008_191423_258.png",
+      "frame_number": 6,
+      "depth_scale": 0.001,
+      "intrinsics": {
+        "fx": 674.4192801798159,
+        "fy": 674.4192801798159,
+        "ppx": 640.0,
+        "ppy": 360.0,
+        "width": 1280,
+        "height": 720,
+        "model": "brown_conrady",
+        "coeffs": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "illumination": "sunny",
+      "target_size_group": null,
+      "notes": "",
+      "truth": {
+        "actual_distance_m": 2.162,
+        "actual_min_m": null,
+        "actual_max_m": null,
+        "actual_source": "manual",
+        "category": "废瓶子",
+        "notes": "由 mock 后端在抓帧时同步记录的仿真真值"
+      },
+      "created_at": "2026-10-08T19:14:23+08:00"
+    },
+    {
+      "stamp": "20261008_191423_698",
+      "rgb_uri": "captures/cap_e0304a1a83674f0f/rgb/rgb_20261008_191423_698.jpg",
+      "depth_uri": "captures/cap_e0304a1a83674f0f/depth/depth_20261008_191423_698.png",
+      "frame_number": 8,
+      "depth_scale": 0.001,
+      "intrinsics": {
+        "fx": 674.4192801798159,
+        "fy": 674.4192801798159,
+        "ppx": 640.0,
+        "ppy": 360.0,
+        "width": 1280,
+        "height": 720,
+        "model": "brown_conrady",
+        "coeffs": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "illumination": "sunny",
+      "target_size_group": null,
+      "notes": "",
+      "truth": {
+        "actual_distance_m": 2.214,
+        "actual_min_m": null,
+        "actual_max_m": null,
+        "actual_source": "manual",
+        "category": "废瓶子",
+        "notes": "由 mock 后端在抓帧时同步记录的仿真真值"
+      },
+      "created_at": "2026-10-08T19:14:23+08:00"
+    },
+    {
+      "stamp": "20261008_191424_125",
+      "rgb_uri": "captures/cap_e0304a1a83674f0f/rgb/rgb_20261008_191424_125.jpg",
+      "depth_uri": "captures/cap_e0304a1a83674f0f/depth/depth_20261008_191424_125.png",
+      "frame_number": 10,
+      "depth_scale": 0.001,
+      "intrinsics": {
+        "fx": 674.4192801798159,
+        "fy": 674.4192801798159,
+        "ppx": 640.0,
+        "ppy": 360.0,
+        "width": 1280,
+        "height": 720,
+        "model": "brown_conrady",
+        "coeffs": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "illumination": "sunny",
+      "target_size_group": null,
+      "notes": "",
+      "truth": {
+        "actual_distance_m": 2.259,
+        "actual_min_m": null,
+        "actual_max_m": null,
+        "actual_source": "manual",
+        "category": "废瓶子",
+        "notes": "由 mock 后端在抓帧时同步记录的仿真真值"
+      },
+      "created_at": "2026-10-08T19:14:24+08:00"
+    },
+    {
+      "stamp": "20261008_191424_560",
+      "rgb_uri": "captures/cap_e0304a1a83674f0f/rgb/rgb_20261008_191424_560.jpg",
+      "depth_uri": "captures/cap_e0304a1a83674f0f/depth/depth_20261008_191424_560.png",
+      "frame_number": 12,
+      "depth_scale": 0.001,
+      "intrinsics": {
+        "fx": 674.4192801798159,
+        "fy": 674.4192801798159,
+        "ppx": 640.0,
+        "ppy": 360.0,
+        "width": 1280,
+        "height": 720,
+        "model": "brown_conrady",
+        "coeffs": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "illumination": "sunny",
+      "target_size_group": null,
+      "notes": "",
+      "truth": {
+        "actual_distance_m": 2.296,
+        "actual_min_m": null,
+        "actual_max_m": null,
+        "actual_source": "manual",
+        "category": "废瓶子",
+        "notes": "由 mock 后端在抓帧时同步记录的仿真真值"
+      },
+      "created_at": "2026-10-08T19:14:24+08:00"
+    },
+    {
+      "stamp": "20261008_191425_007",
+      "rgb_uri": "captures/cap_e0304a1a83674f0f/rgb/rgb_20261008_191425_007.jpg",
+      "depth_uri": "captures/cap_e0304a1a83674f0f/depth/depth_20261008_191425_007.png",
+      "frame_number": 14,
+      "depth_scale": 0.001,
+      "intrinsics": {
+        "fx": 674.4192801798159,
+        "fy": 674.4192801798159,
+        "ppx": 640.0,
+        "ppy": 360.0,
+        "width": 1280,
+        "height": 720,
+        "model": "brown_conrady",
+        "coeffs": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "illumination": "sunny",
+      "target_size_group": null,
+      "notes": "",
+      "truth": {
+        "actual_distance_m": 2.325,
+        "actual_min_m": null,
+        "actual_max_m": null,
+        "actual_source": "manual",
+        "category": "废瓶子",
+        "notes": "由 mock 后端在抓帧时同步记录的仿真真值"
+      },
+      "created_at": "2026-10-08T19:14:25+08:00"
+    },
+    {
+      "stamp": "20261008_191425_461",
+      "rgb_uri": "captures/cap_e0304a1a83674f0f/rgb/rgb_20261008_191425_461.jpg",
+      "depth_uri": "captures/cap_e0304a1a83674f0f/depth/depth_20261008_191425_461.png",
+      "frame_number": 16,
+      "depth_scale": 0.001,
+      "intrinsics": {
+        "fx": 674.4192801798159,
+        "fy": 674.4192801798159,
+        "ppx": 640.0,
+        "ppy": 360.0,
+        "width": 1280,
+        "height": 720,
+        "model": "brown_conrady",
+        "coeffs": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "illumination": "sunny",
+      "target_size_group": null,
+      "notes": "",
+      "truth": {
+        "actual_distance_m": 2.344,
+        "actual_min_m": null,
+        "actual_max_m": null,
+        "actual_source": "manual",
+        "category": "废瓶子",
+        "notes": "由 mock 后端在抓帧时同步记录的仿真真值"
+      },
+      "created_at": "2026-10-08T19:14:25+08:00"
+    },
+    {
+      "stamp": "20261008_191425_917",
+      "rgb_uri": "captures/cap_e0304a1a83674f0f/rgb/rgb_20261008_191425_917.jpg",
+      "depth_uri": "captures/cap_e0304a1a83674f0f/depth/depth_20261008_191425_917.png",
+      "frame_number": 18,
+      "depth_scale": 0.001,
+      "intrinsics": {
+        "fx": 674.4192801798159,
+        "fy": 674.4192801798159,
+        "ppx": 640.0,
+        "ppy": 360.0,
+        "width": 1280,
+        "height": 720,
+        "model": "brown_conrady",
+        "coeffs": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "illumination": "sunny",
+      "target_size_group": null,
+      "notes": "",
+      "truth": {
+        "actual_distance_m": 2.35,
+        "actual_min_m": null,
+        "actual_max_m": null,
+        "actual_source": "manual",
+        "category": "废瓶子",
+        "notes": "由 mock 后端在抓帧时同步记录的仿真真值"
+      },
+      "created_at": "2026-10-08T19:14:25+08:00"
+    },
+    {
+      "stamp": "20261008_191426_372",
+      "rgb_uri": "captures/cap_e0304a1a83674f0f/rgb/rgb_20261008_191426_372.jpg",
+      "depth_uri": "captures/cap_e0304a1a83674f0f/depth/depth_20261008_191426_372.png",
+      "frame_number": 20,
+      "depth_scale": 0.001,
+      "intrinsics": {
+        "fx": 674.4192801798159,
+        "fy": 674.4192801798159,
+        "ppx": 640.0,
+        "ppy": 360.0,
+        "width": 1280,
+        "height": 720,
+        "model": "brown_conrady",
+        "coeffs": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "illumination": "sunny",
+      "target_size_group": null,
+      "notes": "",
+      "truth": {
+        "actual_distance_m": 2.343,
+        "actual_min_m": null,
+        "actual_max_m": null,
+        "actual_source": "manual",
+        "category": "废瓶子",
+        "notes": "由 mock 后端在抓帧时同步记录的仿真真值"
+      },
+      "created_at": "2026-10-08T19:14:26+08:00"
+    },
+    {
+      "stamp": "20261008_191426_810",
+      "rgb_uri": "captures/cap_e0304a1a83674f0f/rgb/rgb_20261008_191426_810.jpg",
+      "depth_uri": "captures/cap_e0304a1a83674f0f/depth/depth_20261008_191426_810.png",
+      "frame_number": 22,
+      "depth_scale": 0.001,
+      "intrinsics": {
+        "fx": 674.4192801798159,
+        "fy": 674.4192801798159,
+        "ppx": 640.0,
+        "ppy": 360.0,
+        "width": 1280,
+        "height": 720,
+        "model": "brown_conrady",
+        "coeffs": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "illumination": "sunny",
+      "target_size_group": null,
+      "notes": "",
+      "truth": {
+        "actual_distance_m": 2.325,
+        "actual_min_m": null,
+        "actual_max_m": null,
+        "actual_source": "manual",
+        "category": "废瓶子",
+        "notes": "由 mock 后端在抓帧时同步记录的仿真真值"
+      },
+      "created_at": "2026-10-08T19:14:26+08:00"
+    },
+    {
+      "stamp": "20261008_191427_270",
+      "rgb_uri": "captures/cap_e0304a1a83674f0f/rgb/rgb_20261008_191427_270.jpg",
+      "depth_uri": "captures/cap_e0304a1a83674f0f/depth/depth_20261008_191427_270.png",
+      "frame_number": 24,
+      "depth_scale": 0.001,
+      "intrinsics": {
+        "fx": 674.4192801798159,
+        "fy": 674.4192801798159,
+        "ppx": 640.0,
+        "ppy": 360.0,
+        "width": 1280,
+        "height": 720,
+        "model": "brown_conrady",
+        "coeffs": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "illumination": "sunny",
+      "target_size_group": null,
+      "notes": "",
+      "truth": {
+        "actual_distance_m": 2.294,
+        "actual_min_m": null,
+        "actual_max_m": null,
+        "actual_source": "manual",
+        "category": "废瓶子",
+        "notes": "由 mock 后端在抓帧时同步记录的仿真真值"
+      },
+      "created_at": "2026-10-08T19:14:27+08:00"
+    },
+    {
+      "stamp": "20261008_191427_732",
+      "rgb_uri": "captures/cap_e0304a1a83674f0f/rgb/rgb_20261008_191427_732.jpg",
+      "depth_uri": "captures/cap_e0304a1a83674f0f/depth/depth_20261008_191427_732.png",
+      "frame_number": 26,
+      "depth_scale": 0.001,
+      "intrinsics": {
+        "fx": 674.4192801798159,
+        "fy": 674.4192801798159,
+        "ppx": 640.0,
+        "ppy": 360.0,
+        "width": 1280,
+        "height": 720,
+        "model": "brown_conrady",
+        "coeffs": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "illumination": "sunny",
+      "target_size_group": null,
+      "notes": "",
+      "truth": {
+        "actual_distance_m": 2.253,
+        "actual_min_m": null,
+        "actual_max_m": null,
+        "actual_source": "manual",
+        "category": "废瓶子",
+        "notes": "由 mock 后端在抓帧时同步记录的仿真真值"
+      },
+      "created_at": "2026-10-08T19:14:27+08:00"
+    },
+    {
+      "stamp": "20261008_191428_199",
+      "rgb_uri": "captures/cap_e0304a1a83674f0f/rgb/rgb_20261008_191428_199.jpg",
+      "depth_uri": "captures/cap_e0304a1a83674f0f/depth/depth_20261008_191428_199.png",
+      "frame_number": 28,
+      "depth_scale": 0.001,
+      "intrinsics": {
+        "fx": 674.4192801798159,
+        "fy": 674.4192801798159,
+        "ppx": 640.0,
+        "ppy": 360.0,
+        "width": 1280,
+        "height": 720,
+        "model": "brown_conrady",
+        "coeffs": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "illumination": "sunny",
+      "target_size_group": null,
+      "notes": "",
+      "truth": {
+        "actual_distance_m": 2.203,
+        "actual_min_m": null,
+        "actual_max_m": null,
+        "actual_source": "manual",
+        "category": "废瓶子",
+        "notes": "由 mock 后端在抓帧时同步记录的仿真真值"
+      },
+      "created_at": "2026-10-08T19:14:28+08:00"
+    },
+    {
+      "stamp": "20261008_191428_669",
+      "rgb_uri": "captures/cap_e0304a1a83674f0f/rgb/rgb_20261008_191428_669.jpg",
+      "depth_uri": "captures/cap_e0304a1a83674f0f/depth/depth_20261008_191428_669.png",
+      "frame_number": 30,
+      "depth_scale": 0.001,
+      "intrinsics": {
+        "fx": 674.4192801798159,
+        "fy": 674.4192801798159,
+        "ppx": 640.0,
+        "ppy": 360.0,
+        "width": 1280,
+        "height": 720,
+        "model": "brown_conrady",
+        "coeffs": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "illumination": "sunny",
+      "target_size_group": null,
+      "notes": "",
+      "truth": {
+        "actual_distance_m": 2.148,
+        "actual_min_m": null,
+        "actual_max_m": null,
+        "actual_source": "manual",
+        "category": "废瓶子",
+        "notes": "由 mock 后端在抓帧时同步记录的仿真真值"
+      },
+      "created_at": "2026-10-08T19:14:28+08:00"
+    },
+    {
+      "stamp": "20261008_191429_114",
+      "rgb_uri": "captures/cap_e0304a1a83674f0f/rgb/rgb_20261008_191429_114.jpg",
+      "depth_uri": "captures/cap_e0304a1a83674f0f/depth/depth_20261008_191429_114.png",
+      "frame_number": 32,
+      "depth_scale": 0.001,
+      "intrinsics": {
+        "fx": 674.4192801798159,
+        "fy": 674.4192801798159,
+        "ppx": 640.0,
+        "ppy": 360.0,
+        "width": 1280,
+        "height": 720,
+        "model": "brown_conrady",
+        "coeffs": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "illumination": "sunny",
+      "target_size_group": null,
+      "notes": "",
+      "truth": {
+        "actual_distance_m": 2.091,
+        "actual_min_m": null,
+        "actual_max_m": null,
+        "actual_source": "manual",
+        "category": "废瓶子",
+        "notes": "由 mock 后端在抓帧时同步记录的仿真真值"
+      },
+      "created_at": "2026-10-08T19:14:29+08:00"
+    },
+    {
+      "stamp": "20261008_191429_558",
+      "rgb_uri": "captures/cap_e0304a1a83674f0f/rgb/rgb_20261008_191429_558.jpg",
+      "depth_uri": "captures/cap_e0304a1a83674f0f/depth/depth_20261008_191429_558.png",
+      "frame_number": 34,
+      "depth_scale": 0.001,
+      "intrinsics": {
+        "fx": 674.4192801798159,
+        "fy": 674.4192801798159,
+        "ppx": 640.0,
+        "ppy": 360.0,
+        "width": 1280,
+        "height": 720,
+        "model": "brown_conrady",
+        "coeffs": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "illumination": "sunny",
+      "target_size_group": null,
+      "notes": "",
+      "truth": {
+        "actual_distance_m": 2.036,
+        "actual_min_m": null,
+        "actual_max_m": null,
+        "actual_source": "manual",
+        "category": "废瓶子",
+        "notes": "由 mock 后端在抓帧时同步记录的仿真真值"
+      },
+      "created_at": "2026-10-08T19:14:29+08:00"
+    },
+    {
+      "stamp": "20261008_191430_017",
+      "rgb_uri": "captures/cap_e0304a1a83674f0f/rgb/rgb_20261008_191430_017.jpg",
+      "depth_uri": "captures/cap_e0304a1a83674f0f/depth/depth_20261008_191430_017.png",
+      "frame_number": 36,
+      "depth_scale": 0.001,
+      "intrinsics": {
+        "fx": 674.4192801798159,
+        "fy": 674.4192801798159,
+        "ppx": 640.0,
+        "ppy": 360.0,
+        "width": 1280,
+        "height": 720,
+        "model": "brown_conrady",
+        "coeffs": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "illumination": "sunny",
+      "target_size_group": null,
+      "notes": "",
+      "truth": {
+        "actual_distance_m": 1.984,
+        "actual_min_m": null,
+        "actual_max_m": null,
+        "actual_source": "manual",
+        "category": "废瓶子",
+        "notes": "由 mock 后端在抓帧时同步记录的仿真真值"
+      },
+      "created_at": "2026-10-08T19:14:30+08:00"
+    },
+    {
+      "stamp": "20261008_191430_532",
+      "rgb_uri": "captures/cap_e0304a1a83674f0f/rgb/rgb_20261008_191430_532.jpg",
+      "depth_uri": "captures/cap_e0304a1a83674f0f/depth/depth_20261008_191430_532.png",
+      "frame_number": 38,
+      "depth_scale": 0.001,
+      "intrinsics": {
+        "fx": 674.4192801798159,
+        "fy": 674.4192801798159,
+        "ppx": 640.0,
+        "ppy": 360.0,
+        "width": 1280,
+        "height": 720,
+        "model": "brown_conrady",
+        "coeffs": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "illumination": "sunny",
+      "target_size_group": null,
+      "notes": "",
+      "truth": {
+        "actual_distance_m": 1.934,
+        "actual_min_m": null,
+        "actual_max_m": null,
+        "actual_source": "manual",
+        "category": "废瓶子",
+        "notes": "由 mock 后端在抓帧时同步记录的仿真真值"
+      },
+      "created_at": "2026-10-08T19:14:30+08:00"
+    },
+    {
+      "stamp": "20261008_191431_037",
+      "rgb_uri": "captures/cap_e0304a1a83674f0f/rgb/rgb_20261008_191431_037.jpg",
+      "depth_uri": "captures/cap_e0304a1a83674f0f/depth/depth_20261008_191431_037.png",
+      "frame_number": 40,
+      "depth_scale": 0.001,
+      "intrinsics": {
+        "fx": 674.4192801798159,
+        "fy": 674.4192801798159,
+        "ppx": 640.0,
+        "ppy": 360.0,
+        "width": 1280,
+        "height": 720,
+        "model": "brown_conrady",
+        "coeffs": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "illumination": "sunny",
+      "target_size_group": null,
+      "notes": "",
+      "truth": {
+        "actual_distance_m": 1.892,
+        "actual_min_m": null,
+        "actual_max_m": null,
+        "actual_source": "manual",
+        "category": "废瓶子",
+        "notes": "由 mock 后端在抓帧时同步记录的仿真真值"
+      },
+      "created_at": "2026-10-08T19:14:31+08:00"
+    }
+  ],
+  "recording": false,
+  "paused": false,
+  "camera": {
+    "backend": "mock",
+    "model": "Synthetic RGB-D Scene (MockBackend)",
+    "serial": "MOCK-0000",
+    "firmware": "sim-1.0",
+    "usb_type": "n/a",
+    "width": 1280,
+    "height": 720,
+    "fps": 30,
+    "depth_scale": 0.001,
+    "intrinsics": {
+      "fx": 674.4192801798159,
+      "fy": 674.4192801798159,
+      "ppx": 640.0,
+      "ppy": 360.0,
+      "width": 1280,
+      "height": 720,
+      "model": "brown_conrady",
+      "coeffs": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    "note": "无 RealSense 设备时使用的合成场景，深度含模拟的随距离放大偏置",
+    "bias_coef": 0.0038,
+    "road_half_width_m": 3.1,
+    "camera_height_m": 1.25,
+    "running": true,
+    "frames": 0,
+    "fps_actual": 0.0,
+    "uptime_s": 0.0
+  },
+  "finished_at": "2026-10-08T19:14:31+08:00",
+  "item_count": 20,
+  "with_truth": 20
+}

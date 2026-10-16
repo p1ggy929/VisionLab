@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+  <div class="hint">
+    数据集按<b>任务类型</b>隔离：检测任务使用 11 类矩形框标注，分割任务使用二值掩膜。
+    掩膜前景值采用白名单机制（默认 1 / 17 / 255），校验器会检查口径一致性——
+    这正是修复原项目 B「训练用 ==17、评估用 &gt;0」冲突的入口。
+  </div>
+</div>
+<div id="dataset-list"></div>
+{% endblock %}

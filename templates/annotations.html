@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card" id="ann-form"></div>
+<div class="card" id="ann-hint"></div>
+
+<div class="card">
+  <header><h3>校验维度说明</h3></header>
+  <table>
+    <thead><tr><th>校验项</th><th>含义</th><th>触发后果</th></tr></thead>
+    <tbody>
+      <tr><td>missing_image / missing_label</td><td>图像找不到文件，或图像没有对应标注</td><td>该样本不参与训练</td></tr>
+      <tr><td>missing_mask</td><td>分割任务图像没有同名掩膜</td><td>该样本不参与训练</td></tr>
+      <tr><td>fg_value_unexpected</td><td>掩膜前景值不在白名单内</td><td>提示修正类别映射</td></tr>
+      <tr><td>fg_value_ambiguous</td><td>同一掩膜出现多个前景值（口径不一致）</td><td><b>阻止冻结</b>，需先统一</td></tr>
+      <tr><td>mask_area_abnormal</td><td>掩膜占比 &lt; 2% 或 &gt; 98%</td><td>标记为可疑样本</td></tr>
+    </tbody>
+  </table>
+</div>
+{% endblock %}

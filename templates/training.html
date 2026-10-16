@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="grid c4" id="task-summary"></div>
+
+<div class="card">
+  <header><h3>训练配置</h3><span class="muted small">检测走 Ultralytics，分割走自定义 PyTorch 训练循环</span></header>
+  <div id="train-form"></div>
+</div>
+
+<div class="card">
+  <header><h3>任务队列</h3><span class="muted small">每 5 秒自动刷新</span></header>
+  <div id="task-table"></div>
+</div>
+{% endblock %}

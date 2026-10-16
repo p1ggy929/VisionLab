@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="grid c3" id="metric-row"></div>
+
+<div class="card" id="filter-bar"></div>
+
+<div class="grid c2">
+  <div class="card">
+    <header><h3>运行日志</h3><span class="muted small">内存缓冲（最近 300 条）</span></header>
+    <div class="log-view" id="log-view"></div>
+  </div>
+  <div class="card">
+    <header><h3>日志文件尾部</h3><span class="muted small">storage/logs/visionlab.log</span></header>
+    <div id="log-tail"></div>
+  </div>
+</div>
+
+<div class="card">
+  <header><h3>存储目录用量</h3></header>
+  <div id="storage-row"></div>
+</div>
+{% endblock %}

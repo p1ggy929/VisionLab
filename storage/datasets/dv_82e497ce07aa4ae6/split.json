@@ -1,0 +1,11 @@
+{
+  "source": "legacy_project_a",
+  "seed": null,
+  "ratio": "原始划分",
+  "counts": {
+    "train": 2301,
+    "val": 393,
+    "test": 0
+  },
+  "content_hash": "28b67abc4d07d710f1e42b441583bf996ad31d2ab8137da93d253489b35c1021"
+}
