@@ -8,7 +8,7 @@ from typing import Any, Callable
 
 from flask import g, jsonify, request
 
-from core.exceptions import AuthError, PermissionError_, VisionLabError
+from core.exceptions import AuthError, PermissionDeniedError, VisionLabError
 from core.logging_setup import get_logger
 from services import auth_service
 
@@ -52,10 +52,10 @@ def load_user() -> dict | None:
     if not token:
         return None
     try:
-        payload = auth_service.parse_token(token)
+        claims = auth_service.parse_token(token)
     except AuthError:
         return None
-    user = auth_service.get_user(payload["id"])
+    user = auth_service.get_user(claims["id"])
     if user and int(user.get("is_active", 1)):
         g.user = {"id": user["id"], "username": user["username"],
                   "role": user["role"], "display_name": user.get("display_name")}
@@ -81,9 +81,9 @@ def require_perm(action: str) -> Callable:
             if user is None:
                 return fail("请先登录。", 40100, 401)
             if not auth_service.check_permission(user, action):
-                auth_service.audit(user["id"], user["username"], action,
-                                   "permission", None, "denied", request.remote_addr or "",
-                                   {"path": request.path})
+                auth_service.audit(auth_service.AuditEvent(
+                    user["id"], user["username"], action, "permission", None, "denied",
+                    request.remote_addr or "", {"path": request.path}))
                 return fail(f"当前角色没有权限执行 [{action}]。", 40300, 403)
             return func(*args, **kwargs)
 
@@ -150,8 +150,8 @@ def register_error_handlers(app) -> None:
     def handle_auth(exc: AuthError):
         return fail(exc.message, exc.code, exc.http_status)
 
-    @app.errorhandler(PermissionError_)
-    def handle_perm(exc: PermissionError_):
+    @app.errorhandler(PermissionDeniedError)
+    def handle_perm(exc: PermissionDeniedError):
         return fail(exc.message, exc.code, exc.http_status)
 
     @app.errorhandler(404)

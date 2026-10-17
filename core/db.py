@@ -101,7 +101,9 @@ def insert(table: str, data: dict, id_prefix: str = "") -> str:
     if "id" not in payload or not payload["id"]:
         payload["id"] = new_id(id_prefix)
     stamp = now_iso()
-    payload.setdefault("created_at", stamp)
+    # 并非所有表都有 created_at（例如 project_member 用 joined_at），按实际列写入。
+    if _has_column(table, "created_at"):
+        payload.setdefault("created_at", stamp)
     if _has_column(table, "updated_at"):
         payload.setdefault("updated_at", stamp)
     payload = _encode(payload)
@@ -216,9 +218,9 @@ def init_db() -> None:
 
 
 def table_counts() -> dict[str, int]:
-    tables = [r["name"] for r in query_all(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
-    )]
+    rows = query_all("SELECT name FROM sqlite_master WHERE type='table' "
+                     "AND name NOT LIKE 'sqlite_%'")
+    tables = [row["name"] for row in rows]
     result = {}
     for name in sorted(tables):
         result[name] = int(query_scalar(f"SELECT COUNT(*) FROM {name}", (), 0) or 0)

@@ -54,12 +54,16 @@ class Prediction(dict):
         if self.task != "detection":
             return []
         out = []
-        for i, box in enumerate(self.get("boxes") or []):
+        boxes = self.get("boxes") or []
+        scores = self.get("scores") or []
+        classes = self.get("classes") or []
+        labels = self.get("labels") or []
+        for i, box in enumerate(boxes):
             out.append({
                 "bbox": [float(v) for v in box[:4]],
-                "score": float((self.get("scores") or [0.0])[i]) if i < len(self.get("scores") or []) else 0.0,
-                "class_id": int((self.get("classes") or [0])[i]) if i < len(self.get("classes") or []) else 0,
-                "class_name": str((self.get("labels") or ["object"])[i]) if i < len(self.get("labels") or []) else "object",
+                "score": float(scores[i]) if i < len(scores) else 0.0,
+                "class_id": int(classes[i]) if i < len(classes) else 0,
+                "class_name": str(labels[i]) if i < len(labels) else "object",
             })
         return out
 
@@ -124,6 +128,11 @@ class BasePlugin:
 
     def release(self) -> None:
         self.loaded = False
+
+    @property
+    def model(self):
+        """底层模型对象（子类加载后可用），供诊断脚本读取参数量等信息。"""
+        return getattr(self, "_model", None)
 
     # ------------------------------------------------------------------
     @staticmethod

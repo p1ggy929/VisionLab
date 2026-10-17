@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import csv
 import re
 from pathlib import Path
@@ -35,15 +37,36 @@ def normalize_yolo_stem(stem: str) -> str:
     return text
 
 
-def register_model(name: str, task_type: str, weights_uri: str | None = None,
-                   arch: str | None = None, variant: str | None = None,
-                   framework: str | None = None, project_id: str | None = None,
-                   num_classes: int | None = None, class_names: list[str] | None = None,
-                   metrics: dict | None = None, notes: str = "",
-                   weight_origin: str = "imported",
-                   train_experiment_id: str | None = None,
-                   source_filename: str | None = None) -> dict:
-    name = str(name).strip()
+@dataclass(frozen=True)
+class ModelRegistration:
+    """登记一个模型卡片所需的完整信息。"""
+
+    name: str
+    task_type: str
+    weights_uri: str | None = None
+    arch: str | None = None
+    variant: str | None = None
+    framework: str | None = None
+    project_id: str | None = None
+    num_classes: int | None = None
+    class_names: list[str] | None = None
+    metrics: dict | None = None
+    notes: str = ""
+    weight_origin: str = "imported"
+    train_experiment_id: str | None = None
+    source_filename: str | None = None
+
+
+def register_model(registration: ModelRegistration) -> dict:
+    name = str(registration.name).strip()
+    task_type = registration.task_type
+    weights_uri, arch = registration.weights_uri, registration.arch
+    variant, framework = registration.variant, registration.framework
+    project_id, num_classes = registration.project_id, registration.num_classes
+    class_names, metrics = registration.class_names, registration.metrics
+    notes, weight_origin = registration.notes, registration.weight_origin
+    train_experiment_id = registration.train_experiment_id
+    source_filename = registration.source_filename
     if not name:
         raise ValidationError("模型名称不能为空。")
     if task_type not in ("detection", "segmentation"):
@@ -166,14 +189,14 @@ def scan_yolo_runs(runs_dir: str, project_id: str | None = None) -> dict:
 
         metrics = _read_yolo_metrics(run_dir / "results.csv")
         weights = _find_weight(run_dir)
-        register_model(
+        register_model(ModelRegistration(
             name=model_name, task_type="detection", arch=arch,
             variant=size, framework="ultralytics", project_id=project_id,
             weights_uri=storage.to_uri(weights) if weights else None,
             metrics=metrics, weight_origin="trained",
             source_filename=weights.name if weights else None,
             notes=f"由历史训练产物导入（{name}）",
-        )
+        ))
         imported += 1
         details.append({"run": name, "arch": arch, "metrics": metrics,
                         "weights": weights.name if weights else None})
@@ -203,6 +226,7 @@ def _read_yolo_metrics(results_csv: Path) -> dict:
             best = cleaned
     if not best:
         return {}
+
     def num(key: str, digits: int = 4):
         try:
             return round(float(best.get(key) or 0.0), digits)
@@ -252,17 +276,28 @@ def scan_segmentation_weights(models_dir: str, project_id: str | None = None,
             skipped += 1
             continue
         metrics = metrics_index.get((raw_arch.lower(), scale), {})
-        register_model(
+        register_model(ModelRegistration(
             name=model_name, task_type="segmentation", arch=arch, variant=str(scale),
             framework="pytorch", project_id=project_id,
             weights_uri=storage.to_uri(path), metrics=metrics, weight_origin="trained",
             source_filename=path.name,
             notes=f"由原项目 B 权重导入（训练样本数 {scale}，{tag}）",
-        )
+        ))
         imported += 1
         details.append({"file": path.name, "arch": arch, "scale": scale,
                         "tag": tag, "metrics": metrics})
     return {"imported": imported, "skipped": skipped, "details": details[:40]}
+
+
+def _metric_reader(row: dict):
+    """返回绑定到指定 CSV 行的指标读取闭包（避免循环内闭包捕获到错误行）。"""
+
+    def read(name: str):
+        try:
+            return round(float(row.get(name) or 0.0), 4)
+        except (TypeError, ValueError):
+            return None
+    return read
 
 
 def _load_best_model_metrics(best_model_dir: Path | None) -> dict:
@@ -295,14 +330,10 @@ def _load_best_model_metrics(best_model_dir: Path | None) -> dict:
         if not best:
             continue
 
-        def num(name: str):
-            try:
-                return round(float(best.get(name) or 0.0), 4)
-            except (TypeError, ValueError):
-                return None
-
-        index[key] = {"miou": num("IoU"), "dice": num("Dice"), "accuracy": num("Accuracy"),
-                      "precision": num("Precision"), "recall": num("Recall")}
+        read_metric = _metric_reader(best)
+        index[key] = {"miou": read_metric("IoU"), "dice": read_metric("Dice"),
+                      "accuracy": read_metric("Accuracy"), "precision": read_metric("Precision"),
+                      "recall": read_metric("Recall")}
     return index
 
 
@@ -341,9 +372,10 @@ def scan_platform_models(project_id: str | None = None) -> dict:
                     if origin == "trained"
                     else f"官方预训练权重（COCO 80 类），仅作对照基线；"
                          f"用于本项目 11 类检测前需微调。来源目录 {folder}")
-            register_model(name=model_name, task_type="detection", arch=arch, variant=size,
-                           project_id=project_id, weights_uri=storage.to_uri(path),
-                           weight_origin=origin, source_filename=path.name, notes=note)
+            register_model(ModelRegistration(
+                name=model_name, task_type="detection", arch=arch, variant=size,
+                project_id=project_id, weights_uri=storage.to_uri(path),
+                weight_origin=origin, source_filename=path.name, notes=note))
             imported += 1
             details.append({"name": model_name, "file": path.name,
                             "size_mb": round(path.stat().st_size / 1024 / 1024, 1)})

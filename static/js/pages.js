@@ -1,13 +1,19 @@
 /* ============================================================
    视界智研 —— 页面逻辑（18 个页面）
    ============================================================ */
-(function (global) {
+((global) => {
   "use strict";
 
   const VL = global.VL;
-  const API = VL.API, Fmt = VL.Fmt, Toast = VL.Toast, Modal = VL.Modal,
-        UI = VL.UI, Chart = VL.Chart, handleError = VL.handleError,
-        poll = VL.poll, connectSocket = VL.connectSocket;
+  const API = VL.API;
+  const Fmt = VL.Fmt;
+  const Toast = VL.Toast;
+  const Modal = VL.Modal;
+  const UI = VL.UI;
+  const Chart = VL.Chart;
+  const handleError = VL.handleError;
+  const poll = VL.poll;
+  const connectSocket = VL.connectSocket;
 
   const Pages = {};
   let pollers = [];
@@ -22,7 +28,7 @@
   /* ================================================================
      启动
      ================================================================ */
-  VL.boot = async function () {
+  VL.boot = async () => {
     try {
       await API.me();
     } catch (e) {
@@ -46,28 +52,29 @@
   };
 
   function bindChrome() {
-    const toggle = el("user-toggle"), dropdown = el("user-dropdown");
-    if (toggle && dropdown) toggle.onclick = function () { dropdown.classList.toggle("open"); };
-    document.addEventListener("click", function (event) {
+    const toggle = el("user-toggle");
+    const dropdown = el("user-dropdown");
+    if (toggle && dropdown) toggle.onclick = () => { dropdown.classList.toggle("open"); };
+    document.addEventListener("click", (event) => {
       if (dropdown && !dropdown.contains(event.target) && event.target !== toggle) {
         dropdown.classList.remove("open");
       }
     });
     const logout = el("logout-link");
-    if (logout) logout.onclick = async function (e) {
+    if (logout) logout.onclick = async (e) => {
       e.preventDefault();
       try { await API.post("/api/v1/auth/logout"); } catch (err) { /* 忽略 */ }
       API.setToken("", null);
       location.href = "/login";
     };
     const changePwd = el("change-password-link");
-    if (changePwd) changePwd.onclick = function (e) {
+    if (changePwd) changePwd.onclick = (e) => {
       e.preventDefault();
       Modal.open("修改密码",
         '<label class="field"><span>原密码</span><input id="pwd-old" type="password"></label>' +
         '<label class="field"><span>新密码（至少 6 位）</span><input id="pwd-new" type="password"></label>',
         '<button data-close="1">取消</button><button class="primary" id="pwd-save">保存</button>');
-      el("pwd-save").onclick = async function () {
+      el("pwd-save").onclick = async () => {
         try {
           await API.post("/api/v1/auth/change-password",
             { old_password: value("pwd-old"), new_password: value("pwd-new") });
@@ -81,46 +88,49 @@
   function fillProjectSelector() {
     const select = el("global-project");
     if (!select) return;
-    select.innerHTML = API.state.projects.map(function (p) {
+    select.innerHTML = API.state.projects.map((p) => {
       return '<option value="' + p.id + '"' +
         (p.id === API.projectId() ? " selected" : "") + ">" + Fmt.escape(p.name) + "</option>";
     }).join("") || '<option value="">（暂无项目）</option>';
-    select.onchange = function () { API.setProject(select.value); location.reload(); };
+    select.onchange = () => { API.setProject(select.value); location.reload(); };
   }
 
   function bindModeSwitch() {
     const box = el("global-mode");
     if (!box) return;
-    API.get("/api/v1/pipeline/config").then(function (d) {
+    API.get("/api/v1/pipeline/config").then((d) => {
       const mode = ((d.data || {}).config || {}).mode;
-      box.querySelectorAll("button").forEach(function (b) {
+      box.querySelectorAll("button").forEach((b) => {
         b.classList.toggle("active", b.dataset.mode === mode);
       });
-    }).catch(function () {});
-    box.querySelectorAll("button").forEach(function (btn) {
-      btn.onclick = async function () {
+    }).catch(() => {});
+    box.querySelectorAll("button").forEach((btn) => {
+      btn.onclick = async () => {
         try {
           await API.post("/api/v1/pipeline/config", { mode: btn.dataset.mode });
           box.querySelectorAll("button").forEach(b => b.classList.remove("active"));
           btn.classList.add("active");
           Toast.ok("已切换到：" + btn.textContent);
-          location.href = btn.dataset.mode === "segmentation"
-            ? "/experiments/segmentation"
-            : (btn.dataset.mode === "detection" ? "/experiments/detection" : "/experiments/ranging");
+          const routes = {
+            segmentation: "/experiments/segmentation",
+            detection: "/experiments/detection",
+          };
+          location.href = routes[btn.dataset.mode] || "/experiments/ranging";
         } catch (error) { handleError(error, "切换算法路线失败"); }
       };
     });
   }
 
   function startStatusPollers() {
-    addPoller(poll(async function () {
+    addPoller(poll(async () => {
       const d = await API.get("/api/v1/camera/status");
       const info = d.data || {};
       const badge = el("camera-status");
       if (badge) {
-        const label = info.running
-          ? (info.backend === "realsense" ? "RealSense 在线" : "合成场景")
-          : "相机未启动";
+        let label = "相机未启动";
+        if (info.running) {
+          label = info.backend === "realsense" ? "RealSense 在线" : "合成场景";
+        }
         badge.className = "pill " + (info.running ? "on" : "off");
         const span = badge.querySelector("span:last-child");
         if (span) span.textContent = label;
@@ -129,7 +139,7 @@
       }
     }, 5000));
 
-    addPoller(poll(async function () {
+    addPoller(poll(async () => {
       const d = await API.get("/api/v1/tasks");
       const summary = (d.data || {}).summary || {};
       const badge = el("task-badge");
@@ -141,7 +151,7 @@
       }
     }, 6000));
 
-    addPoller(poll(async function () {
+    addPoller(poll(async () => {
       const d = await API.get("/api/v1/system/info");
       const info = d.data || {};
       html("env-line", "Python " + Fmt.escape(info.python || "-") + "<br>" +
@@ -152,7 +162,7 @@
   /* ================================================================
      工作台
      ================================================================ */
-  Pages.dashboard = async function () {
+  Pages.dashboard = async () => {
     html("page-actions",
       '<button class="primary" onclick="location.href=\'/experiments/ranging\'">开始测距实验</button>' +
       '<button onclick="location.href=\'/camera/capture\'">数据采集</button>' +
@@ -213,7 +223,7 @@
   /* ================================================================
      项目管理
      ================================================================ */
-  Pages.projects = async function () {
+  Pages.projects = async () => {
     html("page-actions", '<button class="primary" id="btn-new-project">新建项目</button>');
     el("btn-new-project").onclick = newProjectModal;
     await loadProjects();
@@ -222,7 +232,7 @@
   async function loadProjects() {
     const d = await API.get("/api/v1/projects", { page_size: 100 });
     const rows = d.data || [];
-    html("project-list", rows.length ? '<div class="grid c3">' + rows.map(function (p) {
+    html("project-list", rows.length ? '<div class="grid c3">' + rows.map((p) => {
       const stats = p.stats || {};
       return '<div class="card">' +
         '<header><h3><a href="/projects/' + p.id + '">' + Fmt.escape(p.name) + "</a></h3>" +
@@ -237,8 +247,8 @@
         '<button class="sm" onclick="location.href=\'/experiments?project_id=' + p.id + '\'">查看实验</button>' +
         '<button class="sm" data-del="' + p.id + '">归档</button></div></div>';
     }).join("") + "</div>" : '<div class="empty">还没有项目，点击右上角「新建项目」开始</div>');
-    document.querySelectorAll("[data-del]").forEach(function (btn) {
-      btn.onclick = async function () {
+    document.querySelectorAll("[data-del]").forEach((btn) => {
+      btn.onclick = async () => {
         try {
           await API.post("/api/v1/projects/" + btn.dataset.del + "/archive");
           Toast.ok("项目已归档");
@@ -257,7 +267,7 @@
       '<label class="field"><span>应用目标</span>' + UI.select("np-target", API.dict().app_targets || [], "sweeper") + "</label>" +
       "</div>",
       '<button data-close="1">取消</button><button class="primary" id="np-save">创建</button>');
-    el("np-save").onclick = async function () {
+    el("np-save").onclick = async () => {
       try {
         await API.post("/api/v1/projects", {
           name: value("np-name"), description: value("np-desc"),
@@ -274,7 +284,7 @@
   /* ================================================================
      项目详情
      ================================================================ */
-  Pages.project_detail = async function () {
+  Pages.project_detail = async () => {
     const id = location.pathname.split("/").pop();
     const d = await API.get("/api/v1/projects/" + id);
     const p = d.data || {};
@@ -304,7 +314,7 @@
      实验管理
      ================================================================ */
   let experimentPage = 1;
-  Pages.experiments = async function () {
+  Pages.experiments = async () => {
     const params = new URLSearchParams(location.search);
     const projectId = params.get("project_id") || API.projectId();
     html("filter-bar",
@@ -319,11 +329,11 @@
         '<option value="' + k + '">' + API.dict().status_labels[k] + "</option>").join("") + "</select></label>" +
       '<label class="field"><span>&nbsp;</span><button class="primary" id="f-apply">查询</button></label>' +
       "</div>");
-    el("f-apply").onclick = function () { experimentPage = 1; loadExperiments(); };
+    el("f-apply").onclick = () => { experimentPage = 1; loadExperiments(); };
     html("page-actions", '<button id="btn-compare">对比选中实验</button>' +
       '<button onclick="location.href=\'/training\'">发起训练</button>');
 
-    el("btn-compare").onclick = async function () {
+    el("btn-compare").onclick = async () => {
       const ids = UI.checkedValues("exp-check");
       if (ids.length < 2) return Toast.warn("请勾选至少 2 个实验");
       const d = await API.get("/api/v1/experiments/compare", { ids: ids.join(",") });
@@ -363,22 +373,22 @@
       { title: "创建", render: r => Fmt.time(r.created_at) },
       { title: "操作", render: r => '<button class="sm" data-clone="' + r.id + '">克隆</button> ' +
         '<button class="sm danger" data-del="' + r.id + '">删除</button>' },
-    ], rows, { empty: "暂无实验" }) + UI.pager(d.total, d.page, d.page_size, function (p) {
+    ], rows, { empty: "暂无实验" }) + UI.pager(d.total, d.page, d.page_size, (p) => {
       experimentPage = p; loadExperiments();
     }));
     const all = el("exp-all");
-    if (all) all.onclick = function () {
+    if (all) all.onclick = () => {
       document.querySelectorAll('input[name="exp-check"]').forEach(c => { c.checked = all.checked; });
     };
-    document.querySelectorAll("[data-clone]").forEach(function (btn) {
-      btn.onclick = async function () {
+    document.querySelectorAll("[data-clone]").forEach((btn) => {
+      btn.onclick = async () => {
         try { await API.post("/api/v1/experiments/" + btn.dataset.clone + "/clone", {}); Toast.ok("已克隆"); loadExperiments(); }
         catch (error) { handleError(error); }
       };
     });
-    document.querySelectorAll("[data-del]").forEach(function (btn) {
-      btn.onclick = async function () {
-        if (!confirm("确认删除该实验？")) return;
+    document.querySelectorAll("[data-del]").forEach((btn) => {
+      btn.onclick = async () => {
+        if (!(await Modal.ask("确认删除该实验？"))) return;
         try { await API.del("/api/v1/experiments/" + btn.dataset.del); Toast.ok("已删除"); loadExperiments(); }
         catch (error) { handleError(error); }
       };
@@ -388,7 +398,7 @@
   /* ================================================================
      实验详情
      ================================================================ */
-  Pages.experiment_detail = async function () {
+  Pages.experiment_detail = async () => {
     const id = location.pathname.split("/").pop();
     const d = await API.get("/api/v1/experiments/" + id);
     const exp = d.data || {};
@@ -400,7 +410,7 @@
       '<button id="btn-manifest">生成复现清单</button><button id="btn-verify">验证复现</button>' +
       '<button id="btn-report" class="primary">导出报告</button><button id="btn-clone">克隆</button>');
 
-    el("btn-manifest").onclick = async function () {
+    el("btn-manifest").onclick = async () => {
       try {
         const r = await API.post("/api/v1/experiments/" + id + "/manifest", {});
         Modal.open("复现清单 run_manifest.json",
@@ -408,7 +418,7 @@
           Fmt.escape(JSON.stringify(r.data, null, 2)) + "</pre>");
       } catch (error) { handleError(error); }
     };
-    el("btn-verify").onclick = async function () {
+    el("btn-verify").onclick = async () => {
       try {
         const r = await API.post("/api/v1/experiments/" + id + "/reproduce", {});
         const data = r.data || {};
@@ -419,8 +429,8 @@
                    { empty: "无差异", scroll: false }));
       } catch (error) { handleError(error); }
     };
-    el("btn-report").onclick = function () { location.href = "/reports?experiment_id=" + id; };
-    el("btn-clone").onclick = async function () {
+    el("btn-report").onclick = () => { location.href = "/reports?experiment_id=" + id; };
+    el("btn-clone").onclick = async () => {
       try { await API.post("/api/v1/experiments/" + id + "/clone", {}); Toast.ok("已克隆"); location.reload(); }
       catch (error) { handleError(error); }
     };
@@ -507,22 +517,22 @@
 
     el("live-start").onclick = startLiveSession;
     el("live-stop").onclick = stopLiveSession;
-    el("live-pause").onclick = async function () {
+    el("live-pause").onclick = async () => {
       try { await API.post("/api/v1/pipeline/session/pause", {}); Toast.ok("已暂停（可录入真值）"); }
       catch (error) { handleError(error); }
     };
-    el("live-save").onclick = async function () {
+    el("live-save").onclick = async () => {
       try { await API.post("/api/v1/pipeline/save-frame", {}); Toast.ok("当前帧已落库"); }
       catch (error) { handleError(error); }
     };
-    el("live-bulk").onclick = async function () {
+    el("live-bulk").onclick = async () => {
       try {
         const r = await API.post("/api/v1/ranging/records/bulk", { illumination: "sunny" });
         Toast.ok("已落库 " + ((r.data || {}).created || 0) + " 条测距记录");
         refreshLiveRecords();
       } catch (error) { handleError(error); }
     };
-    el("live-export").onclick = function () {
+    el("live-export").onclick = () => {
       window.open("/api/v1/ranging/records/export?task_type=" +
         (mode === "segmentation" ? "segmentation" : "detection"), "_blank");
     };
@@ -566,12 +576,12 @@
 
     const labelMap = { "p-conf": "v-conf", "p-threshold": "v-threshold",
                        "p-points": "v-points", "p-kernel": "v-kernel" };
-    Object.keys(labelMap).forEach(function (id) {
+    Object.keys(labelMap).forEach((id) => {
       const input = el(id);
-      if (input) input.oninput = function () { html(labelMap[id], Number(input.value).toFixed(2)); };
+      if (input) input.oninput = () => { html(labelMap[id], Number(input.value).toFixed(2)); };
     });
 
-    const doApply = async function () {
+    const doApply = async () => {
       const body = {
         mode: mode,
         conf: num("p-conf", 0.3), threshold: num("p-threshold", 0.3),
@@ -588,8 +598,8 @@
           : '<span class="tag ok">插件已加载</span>');
       } catch (error) { handleError(error, "参数应用失败"); }
     };
-    ["p-detector", "p-segmenter"].forEach(function (id) { if (el(id)) el(id).onchange = doApply; });
-    ["p-conf", "p-threshold", "p-points", "p-kernel", "p-corridor"].forEach(function (id) {
+    ["p-detector", "p-segmenter"].forEach((id) => { if (el(id)) el(id).onchange = doApply; });
+    ["p-conf", "p-threshold", "p-points", "p-kernel", "p-corridor"].forEach((id) => {
       if (el(id)) el(id).onchange = doApply;
     });
     document.querySelectorAll('input[name="cls"]').forEach(c => { c.onchange = doApply; });
@@ -624,7 +634,7 @@
       addPoller({ stop() { socket.close(); } });
     } else {
       html("live-source", "HTTP 轮询");
-      addPoller(poll(async function () {
+      addPoller(poll(async () => {
         const d = await API.post("/api/v1/pipeline/process", {});
         renderFrame(d.data);
       }, 800));
@@ -633,7 +643,8 @@
 
   function renderFrame(payload) {
     if (!payload) return;
-    const overlayImg = el("img-overlay"), depthImg = el("img-depth");
+    const overlayImg = el("img-overlay");
+    const depthImg = el("img-depth");
     if (overlayImg) {
       const data = payload.image || payload.overlay_base64;
       if (data) overlayImg.src = "data:image/jpeg;base64," + data;
@@ -663,8 +674,8 @@
       { title: "操作", render: r => '<button class="sm" data-rec="' + Fmt.escape(r.category) + '">记录</button>' },
     ], objects, { scroll: false }) : '<div class="empty">当前帧没有检出目标</div>');
 
-    document.querySelectorAll("[data-rec]").forEach(function (btn) {
-      btn.onclick = function () { recordModal({ c: btn.dataset.rec }); };
+    document.querySelectorAll("[data-rec]").forEach((btn) => {
+      btn.onclick = () => { recordModal({ c: btn.dataset.rec }); };
     });
 
     const stats = [];
@@ -692,7 +703,7 @@
       UI.select("rec-illum", API.dict().illuminations || [], "sunny") + "</label>" +
       '<label class="field"><span>备注</span><input id="rec-notes"></label>',
       '<button data-close="1">取消</button><button class="primary" id="rec-save">记录</button>');
-    el("rec-save").onclick = async function () {
+    el("rec-save").onclick = async () => {
       try {
         await API.post("/api/v1/ranging/records", {
           use_last: true, target_kind: "object", metric_kind: "center", category: info.c,
@@ -713,8 +724,8 @@
       html("live-records", UI.table(recordColumns().slice(0, 8).concat([
         { title: "操作", render: r => '<button class="sm danger" data-delrec="' + r.id + '">删除</button>' },
       ]), d.data || [], { empty: "本次还没有记录" }));
-      document.querySelectorAll("[data-delrec]").forEach(function (btn) {
-        btn.onclick = async function () {
+      document.querySelectorAll("[data-delrec]").forEach((btn) => {
+        btn.onclick = async () => {
           try { await API.del("/api/v1/ranging/records/" + btn.dataset.delrec); refreshLiveRecords(); }
           catch (error) { handleError(error); }
         };
@@ -722,12 +733,12 @@
     } catch (error) { /* 静默 */ }
   }
 
-  Pages.experiment_detection = async function () { await initLivePage("detection"); };
-  Pages.experiment_segmentation = async function () {
+  Pages.experiment_detection = async () => { await initLivePage("detection"); };
+  Pages.experiment_segmentation = async () => {
     await initLivePage("segmentation");
     await renderSegExtra();
   };
-  Pages.ranging = async function () {
+  Pages.ranging = async () => {
     await initLivePage("both");
     renderRangingExtra();
   };
@@ -741,7 +752,7 @@
       "MIoU / Dice / Precision / Recall 并汇入大屏与报告。</div>" +
       '<div id="batch-eval-result"></div>';
     el("live-root").appendChild(card);
-    el("btn-batch-eval").onclick = async function () {
+    el("btn-batch-eval").onclick = async () => {
       const models = await API.get("/api/v1/models", { task_type: "segmentation", page_size: 100 });
       const rows = models.data || [];
       if (!rows.length) return Toast.warn("尚未登记分割模型，请先在「模型管理」中扫描历史权重");
@@ -754,7 +765,7 @@
           { title: "已有 MIoU", num: true, render: r => Fmt.num((r.metrics || {}).miou, 4) }],
           rows.slice(0, 40), { scroll: false }),
         '<button data-close="1">取消</button><button class="primary" id="eval-confirm">提交评测</button>');
-      el("eval-confirm").onclick = function () {
+      el("eval-confirm").onclick = () => {
         const ids = UI.checkedValues("eval-model");
         Modal.close();
         html("batch-eval-result", '<div class="hint">已提交 ' + ids.length +
@@ -783,15 +794,15 @@
   /* ================================================================
      相机标定
      ================================================================ */
-  Pages.calibration = async function () {
+  Pages.calibration = async () => {
     html("page-actions", '<button id="btn-start-camera">启动相机</button>' +
       '<button class="primary" id="btn-calibrate">执行标定</button>' +
       '<button id="btn-probe">中心深度探测</button>');
-    el("btn-start-camera").onclick = async function () {
+    el("btn-start-camera").onclick = async () => {
       try { await API.post("/api/v1/camera/stream/start", { backend: "auto" }); Toast.ok("相机已启动"); loadCalibration(); }
       catch (error) { handleError(error); }
     };
-    el("btn-calibrate").onclick = async function () {
+    el("btn-calibrate").onclick = async () => {
       try {
         const r = await API.post("/api/v1/camera/calibrate", {});
         Toast.ok("标定完成");
@@ -799,7 +810,7 @@
         loadCalibration();
       } catch (error) { handleError(error); }
     };
-    el("btn-probe").onclick = async function () {
+    el("btn-probe").onclick = async () => {
       try {
         const r = await API.get("/api/v1/camera/depth-probe");
         Modal.open("深度探测", UI.defList([
@@ -842,11 +853,11 @@
       { title: "操作", render: r => '<button class="sm" data-cal="' + r.id + '">查看</button> ' +
         '<button class="sm" data-default="' + r.id + '">设为默认</button>' },
     ], items, { empty: "尚未执行标定" }));
-    document.querySelectorAll("[data-cal]").forEach(function (btn) {
-      btn.onclick = function () { showCalibration(items.filter(x => x.id === btn.dataset.cal)[0]); };
+    document.querySelectorAll("[data-cal]").forEach((btn) => {
+      btn.onclick = () => { showCalibration(items.filter(x => x.id === btn.dataset.cal)[0]); };
     });
-    document.querySelectorAll("[data-default]").forEach(function (btn) {
-      btn.onclick = async function () {
+    document.querySelectorAll("[data-default]").forEach((btn) => {
+      btn.onclick = async () => {
         try { await API.post("/api/v1/camera/calibrations/" + btn.dataset.default + "/default", {});
               Toast.ok("已设为默认标定"); loadCalibration(); }
         catch (error) { handleError(error); }
@@ -857,7 +868,7 @@
   function showCalibration(data) {
     if (!data) return;
     const check = data.depth_check || {};
-    const bars = (check.samples || []).map(function (s) {
+    const bars = (check.samples || []).map((s) => {
       return "<tr><td>" + Fmt.m(s.actual_m) + '</td><td class="num">' + Fmt.m(s.measured_m) +
         '</td><td class="num">' + Fmt.m(s.abs_error_m) + '</td><td class="num">' +
         Fmt.pct(s.rel_error) + "</td></tr>";
@@ -880,11 +891,11 @@
      数据采集
      ================================================================ */
   let captureSession = null;
-  Pages.capture = async function () {
+  Pages.capture = async () => {
     html("page-actions", '<button class="primary" id="btn-new-session">新建采集会话</button>' +
       '<button id="btn-snapshot">抓拍</button><button id="btn-record">开始/停止录制</button>' +
       '<button id="btn-finish">结束会话</button>');
-    el("btn-new-session").onclick = async function () {
+    el("btn-new-session").onclick = async () => {
       try {
         const r = await API.post("/api/v1/capture/sessions", {
           name: "采集 " + new Date().toLocaleString(),
@@ -895,7 +906,7 @@
         renderCapture();
       } catch (error) { handleError(error); }
     };
-    el("btn-snapshot").onclick = async function () {
+    el("btn-snapshot").onclick = async () => {
       if (!captureSession) return Toast.warn("请先新建采集会话");
       try {
         await API.post("/api/v1/capture/sessions/" + captureSession.id + "/snapshot",
@@ -905,7 +916,7 @@
         await reloadCaptureSession();
       } catch (error) { handleError(error); }
     };
-    el("btn-record").onclick = async function () {
+    el("btn-record").onclick = async () => {
       if (!captureSession) return Toast.warn("请先新建采集会话");
       try {
         const stopping = captureSession.recording;
@@ -915,7 +926,7 @@
         Toast.ok(stopping ? "录制已停止" : "录制已开始");
       } catch (error) { handleError(error); }
     };
-    el("btn-finish").onclick = async function () {
+    el("btn-finish").onclick = async () => {
       if (!captureSession) return;
       try {
         const r = await API.post("/api/v1/capture/sessions/" + captureSession.id + "/finish", {});
@@ -937,11 +948,11 @@
 
     await renderCaptureSource();
 
-    addPoller(poll(function () {
+    addPoller(poll(() => {
       const img = el("cap-rgb");
       if (img) img.src = "/api/v1/camera/frame?t=" + Date.now();
     }, 1200));
-    addPoller(poll(function () {
+    addPoller(poll(() => {
       const img = el("cap-depth");
       if (img) img.src = "/api/v1/camera/depth_frame?t=" + Date.now();
     }, 1600));
@@ -956,8 +967,8 @@
       { title: "开始", render: r => Fmt.time(r.started_at) },
       { title: "操作", render: r => '<button class="sm" data-open="' + r.id + '">打开</button>' },
     ], (sessions.data || {}).items || [], { empty: "暂无采集会话" }));
-    document.querySelectorAll("[data-open]").forEach(function (btn) {
-      btn.onclick = async function () {
+    document.querySelectorAll("[data-open]").forEach((btn) => {
+      btn.onclick = async () => {
         const r = await API.get("/api/v1/capture/sessions/" + btn.dataset.open);
         captureSession = r.data;
         renderCapture();
@@ -1027,7 +1038,7 @@
       ]) + extra);
     }
 
-    el("src-apply").onclick = async function () {
+    el("src-apply").onclick = async () => {
       const mode = value("src-backend");
       const body = { backend: mode };
       const replay = value("src-replay");
@@ -1048,12 +1059,12 @@
       } catch (error) { handleError(error, "切换数据源失败"); }
     };
 
-    el("src-make-sample").onclick = async function () {
+    el("src-make-sample").onclick = async () => {
       Modal.open("抓取回放样本",
         '<p class="muted small">用当前数据源抓取若干帧落盘，生成一个可用于「离线回放」的真实 RGB-D 序列。</p>' +
         '<label class="field"><span>抓取帧数</span><input id="sample-frames" type="number" value="40" min="5" max="300"></label>',
         '<button data-close="1">取消</button><button class="primary" id="sample-go">开始抓取</button>');
-      el("sample-go").onclick = async function () {
+      el("sample-go").onclick = async () => {
         const frames = num("sample-frames", 40);
         Modal.close();
         Toast.info("正在抓取 " + frames + " 帧，请稍候…");
@@ -1089,11 +1100,11 @@
       { title: "真值(m)", num: true, render: r => r.truth ? Fmt.num(r.truth.actual_distance_m, 2) : "-" },
       { title: "操作", render: r => '<button class="sm" data-truth="' + r.stamp + '">录入真值</button>' },
     ], items.slice().reverse(), { empty: "还没有抓拍记录" }));
-    document.querySelectorAll("[data-truth]").forEach(function (btn) {
-      btn.onclick = function () { truthModal(btn.dataset.truth); };
+    document.querySelectorAll("[data-truth]").forEach((btn) => {
+      btn.onclick = () => { truthModal(btn.dataset.truth); };
     });
     const plan = API.dict().distance_plan_m || [];
-    html("capture-plan", plan.map(function (p) {
+    html("capture-plan", plan.map((p) => {
       const hit = items.filter(x => x.truth && Math.abs((x.truth.actual_distance_m || 0) - p) < 0.35).length;
       return '<span class="tag ' + (hit ? "ok" : "") + '" style="margin:2px">' + p + " m" +
         (hit ? " 已录" : "") + "</span>";
@@ -1113,7 +1124,7 @@
         (API.dict().detection_classes || []).map(c => ({ key: c, label: c })), "", "不指定") + "</label></div>" +
       '<label class="field"><span>备注</span><input id="t-notes"></label>',
       '<button data-close="1">取消</button><button class="primary" id="t-save">保存</button>');
-    el("t-save").onclick = async function () {
+    el("t-save").onclick = async () => {
       try {
         await API.post("/api/v1/capture/sessions/" + captureSession.id + "/truth", {
           stamp: stamp, actual_distance_m: value("t-one") || null,
@@ -1131,10 +1142,10 @@
   /* ================================================================
      数据集
      ================================================================ */
-  Pages.datasets = async function () {
+  Pages.datasets = async () => {
     html("page-actions", '<button class="primary" id="btn-new-dataset">新建数据集</button>' +
       '<button id="btn-import-legacy">导入历史数据集</button>');
-    el("btn-new-dataset").onclick = function () {
+    el("btn-new-dataset").onclick = () => {
       Modal.open("新建数据集",
         '<label class="field"><span>名称 *</span><input id="nd-name"></label>' +
         '<div class="form-row">' +
@@ -1145,7 +1156,7 @@
         UI.select("nd-scene", API.dict().scenes || [], "campus_road") + "</label></div>" +
         '<label class="field"><span>说明</span><input id="nd-desc"></label>',
         '<button data-close="1">取消</button><button class="primary" id="nd-save">创建</button>');
-      el("nd-save").onclick = async function () {
+      el("nd-save").onclick = async () => {
         try {
           await API.post("/api/v1/datasets", {
             name: value("nd-name"), task_type: value("nd-task"),
@@ -1157,7 +1168,7 @@
         } catch (error) { handleError(error); }
       };
     };
-    el("btn-import-legacy").onclick = function () {
+    el("btn-import-legacy").onclick = () => {
       Modal.open("导入历史数据集（来自两个原项目）",
         '<p class="muted small">填写原项目数据目录的绝对路径；平台只读取并登记，不移动原文件。</p>' +
         '<label class="field"><span>项目 A 检测图像目录（datasets\\images）</span>' +
@@ -1175,7 +1186,7 @@
         '<label class="field"><span>项目 A 测距记录 CSV（可选）</span>' +
         '<input id="lg-csv" placeholder="E:\\2Project\\2026dachuang\\Yolo_dis_v3源代码\\data\\results\\measurements.csv"></label>',
         '<button data-close="1">取消</button><button class="primary" id="lg-run">开始导入</button>');
-      el("lg-run").onclick = async function () {
+      el("lg-run").onclick = async () => {
         const body = { project_id: API.projectId() };
         if (value("lg-det")) body.det_images_dir = value("lg-det");
         if (value("lg-img") && value("lg-mask")) {
@@ -1214,7 +1225,7 @@
     ], d.data || [], { empty: "暂无数据集，可点击「导入历史数据集」" }));
   }
 
-  Pages.dataset_detail = async function () {
+  Pages.dataset_detail = async () => {
     const id = location.pathname.split("/").pop();
     const d = await API.get("/api/v1/datasets/" + id);
     const ds = d.data || {};
@@ -1227,14 +1238,14 @@
       '<button id="btn-new-version" class="primary">新建版本（扫描目录）</button>' +
       '<button id="btn-validate">执行校验</button>');
 
-    el("btn-new-version").onclick = function () {
+    el("btn-new-version").onclick = () => {
       Modal.open("新建数据集版本",
         '<label class="field"><span>版本号</span><input id="dv-version" value="v1.0"></label>' +
         '<label class="field"><span>图像目录（绝对路径）</span><input id="dv-root"></label>' +
         '<label class="field"><span>划分比例</span><input id="dv-ratio" value="7:2:1"></label>' +
         '<label class="field"><span>随机种子</span><input id="dv-seed" type="number" value="42"></label>',
         '<button data-close="1">取消</button><button class="primary" id="dv-save">扫描并创建</button>');
-      el("dv-save").onclick = async function () {
+      el("dv-save").onclick = async () => {
         try {
           const r = await API.post("/api/v1/datasets/" + id + "/versions", {
             version: value("dv-version"), source_root: value("dv-root"),
@@ -1246,7 +1257,7 @@
         } catch (error) { handleError(error); }
       };
     };
-    el("btn-validate").onclick = async function () {
+    el("btn-validate").onclick = async () => {
       const versions = ds.versions || [];
       if (!versions.length) return Toast.warn("请先创建版本");
       try {
@@ -1277,27 +1288,27 @@
         '<button class="sm" data-images="' + r.id + '">浏览</button>' },
     ], versions, { empty: "尚无版本" }));
 
-    document.querySelectorAll("[data-validate]").forEach(b => b.onclick = async function () {
+    document.querySelectorAll("[data-validate]").forEach(b => b.onclick = async () => {
       try { showValidation((await API.post("/api/v1/datasets/versions/" + b.dataset.validate + "/validate", {})).data); }
       catch (e) { handleError(e); }
     });
-    document.querySelectorAll("[data-split]").forEach(b => b.onclick = async function () {
+    document.querySelectorAll("[data-split]").forEach(b => b.onclick = async () => {
       try { await API.post("/api/v1/datasets/versions/" + b.dataset.split + "/split",
         { ratio: "7:2:1", seed: 42 }); Toast.ok("划分完成"); loadVersions(); }
       catch (e) { handleError(e); }
     });
-    document.querySelectorAll("[data-unify]").forEach(b => b.onclick = async function () {
+    document.querySelectorAll("[data-unify]").forEach(b => b.onclick = async () => {
       try {
         const r = await API.post("/api/v1/datasets/versions/" + b.dataset.unify + "/unify-foreground", {});
         Toast.ok("已统一 " + ((r.data || {}).unified || 0) + " 个掩膜的前景值");
       } catch (e) { handleError(e); }
     });
-    document.querySelectorAll("[data-freeze]").forEach(b => b.onclick = async function () {
+    document.querySelectorAll("[data-freeze]").forEach(b => b.onclick = async () => {
       try { await API.post("/api/v1/datasets/versions/" + b.dataset.freeze + "/freeze", {});
             Toast.ok("版本已冻结"); loadVersions(); }
       catch (e) { handleError(e); }
     });
-    document.querySelectorAll("[data-images]").forEach(b => b.onclick = function () {
+    document.querySelectorAll("[data-images]").forEach(b => b.onclick = () => {
       loadImages(b.dataset.images);
     });
   }
@@ -1334,7 +1345,7 @@
   /* ================================================================
      标注管理
      ================================================================ */
-  Pages.annotations = async function () {
+  Pages.annotations = async () => {
     const datasets = await API.get("/api/v1/datasets", { page_size: 100 });
     const rows = datasets.data || [];
     html("ann-form",
@@ -1353,7 +1364,7 @@
       '<div class="hint">导入后平台会执行完整性校验（漏标 / 越界 / 掩膜前景值口径 / 覆盖率异常），' +
       "结果可在数据集详情页查看。</div>");
     html("page-actions", '<button onclick="location.href=\'/datasets\'">前往数据集管理</button>');
-    el("an-import").onclick = async function () {
+    el("an-import").onclick = async () => {
       const datasetId = value("an-dataset");
       if (!datasetId) return Toast.warn("请先在数据集管理中创建数据集");
       const detail = await API.get("/api/v1/datasets/" + datasetId);
@@ -1364,7 +1375,7 @@
         versions.map(v => '<option value="' + v.id + '">' + v.version + "（" +
           v.image_count + " 张）</option>").join("") + "</select></label>",
         '<button data-close="1">取消</button><button class="primary" id="an-go">开始导入</button>');
-      el("an-go").onclick = async function () {
+      el("an-go").onclick = async () => {
         const versionId = value("an-version");
         Modal.close();
         try {
@@ -1388,7 +1399,7 @@
      模型管理
      ================================================================ */
   let modelPage = 1;
-  Pages.models = async function () {
+  Pages.models = async () => {
     html("filter-bar",
       '<div class="form-row">' +
       '<label class="field"><span>任务类型</span><select id="m-task"><option value="">全部</option>' +
@@ -1397,14 +1408,14 @@
       '<label class="field"><span>关键字</span><input id="m-key"></label>' +
       '<label class="field"><span>&nbsp;</span><button class="primary" id="m-apply">查询</button></label>' +
       "</div>");
-    el("m-apply").onclick = function () { modelPage = 1; loadModels(); };
+    el("m-apply").onclick = () => { modelPage = 1; loadModels(); };
 
     html("page-actions",
       '<button class="primary" id="btn-scan">扫描历史产物</button>' +
       '<button id="btn-model-stats">仓库统计</button>' +
       '<button id="btn-compare-model">对比选中模型</button>');
 
-    el("btn-scan").onclick = function () {
+    el("btn-scan").onclick = () => {
       Modal.open("扫描历史模型产物",
         '<p class="muted small">从两个原项目的训练产物目录中提取权重与指标，生成模型卡片。</p>' +
         '<label class="field"><span>项目 A 的 runs 目录</span><input id="sc-runs" ' +
@@ -1416,7 +1427,7 @@
         '<label class="field"><span class="inline"><input type="checkbox" id="sc-platform" checked> ' +
         "同时扫描平台自身模型目录</span></label>",
         '<button data-close="1">取消</button><button class="primary" id="sc-go">开始扫描</button>');
-      el("sc-go").onclick = async function () {
+      el("sc-go").onclick = async () => {
         const body = { scan_platform: checked("sc-platform"), project_id: API.projectId() };
         if (value("sc-runs")) body.runs_dir = value("sc-runs");
         if (value("sc-seg")) body.seg_models_dir = value("sc-seg");
@@ -1426,7 +1437,7 @@
         try {
           const r = await API.post("/api/v1/models/scan-artifacts", body);
           const data = r.data || {};
-          const summary = Object.keys(data).map(function (key) {
+          const summary = Object.keys(data).map((key) => {
             const v = data[key] || {};
             return key + ": 导入 " + (v.imported || 0) + " / 跳过 " + (v.skipped || 0);
           }).join("\n");
@@ -1435,7 +1446,7 @@
         } catch (error) { handleError(error, "扫描失败"); }
       };
     };
-    el("btn-model-stats").onclick = async function () {
+    el("btn-model-stats").onclick = async () => {
       try {
         const r = await API.get("/api/v1/models/stats");
         const s = r.data || {};
@@ -1450,7 +1461,7 @@
             { scroll: false }));
       } catch (error) { handleError(error); }
     };
-    el("btn-compare-model").onclick = async function () {
+    el("btn-compare-model").onclick = async () => {
       const ids = UI.checkedValues("model-check");
       if (ids.length < 2) return Toast.warn("请勾选至少 2 个模型");
       const r = await API.get("/api/v1/models/compare", { ids: ids.join(",") });
@@ -1488,17 +1499,17 @@
       { title: "操作", render: r => '<button class="sm" data-export="' + r.id + '">导出ONNX</button> ' +
         '<button class="sm danger" data-mdel="' + r.id + '">删除</button>' },
     ], d.data || [], { empty: "暂无模型，点击「扫描历史产物」导入原项目权重" }) +
-      UI.pager(d.total, d.page, d.page_size, function (p) { modelPage = p; loadModels(); }));
+      UI.pager(d.total, d.page, d.page_size, (p) => { modelPage = p; loadModels(); }));
 
     const all = el("model-all");
-    if (all) all.onclick = function () {
+    if (all) all.onclick = () => {
       document.querySelectorAll('input[name="model-check"]').forEach(c => { c.checked = all.checked; });
     };
-    document.querySelectorAll("[data-card]").forEach(function (btn) {
-      btn.onclick = function (e) { e.preventDefault(); showModelCard(btn.dataset.card); };
+    document.querySelectorAll("[data-card]").forEach((btn) => {
+      btn.onclick = (e) => { e.preventDefault(); showModelCard(btn.dataset.card); };
     });
-    document.querySelectorAll("[data-export]").forEach(function (btn) {
-      btn.onclick = async function () {
+    document.querySelectorAll("[data-export]").forEach((btn) => {
+      btn.onclick = async () => {
         try {
           Toast.info("导出中...");
           const r = await API.post("/api/v1/models/" + btn.dataset.export + "/export", { format: "onnx" });
@@ -1506,8 +1517,8 @@
         } catch (error) { handleError(error, "导出失败"); }
       };
     });
-    document.querySelectorAll("[data-mdel]").forEach(function (btn) {
-      btn.onclick = async function () {
+    document.querySelectorAll("[data-mdel]").forEach((btn) => {
+      btn.onclick = async () => {
         try { await API.del("/api/v1/models/" + btn.dataset.mdel); Toast.ok("已删除"); loadModels(); }
         catch (error) { handleError(error); }
       };
@@ -1534,7 +1545,7 @@
   /* ================================================================
      训练实验
      ================================================================ */
-  Pages.training = async function () {
+  Pages.training = async () => {
     const options = await API.get("/api/v1/training/options");
     const o = options.data || {};
     html("train-form",
@@ -1573,7 +1584,7 @@
     html("tr-dataset", '<option value="">（可选）</option>' +
       (datasets.data || []).map(d => '<option value="' + d.id + '">' + Fmt.escape(d.name) + "</option>").join(""));
 
-    el("btn-train").onclick = async function () {
+    el("btn-train").onclick = async () => {
       try {
         const r = await API.post("/api/v1/training/start", {
           project_id: API.projectId(), task_type: value("tr-task"),
@@ -1617,21 +1628,21 @@
      误差分析
      ================================================================ */
   let analysisPage = 1;
-  Pages.analysis = async function () {
+  Pages.analysis = async () => {
     html("filter-bar", buildAnalysisFilters());
-    el("an-apply").onclick = function () { analysisPage = 1; loadAnalysis(); };
-    el("an-reset").onclick = function () { location.reload(); };
+    el("an-apply").onclick = () => { analysisPage = 1; loadAnalysis(); };
+    el("an-reset").onclick = () => { location.reload(); };
     html("page-actions",
       '<button id="btn-save-analysis">保存分析快照</button>' +
       '<button id="btn-export-records">导出记录 CSV</button>');
-    el("btn-save-analysis").onclick = async function () {
+    el("btn-save-analysis").onclick = async () => {
       try {
         const q = filterQuery();
         await API.post("/api/v1/analysis/summary" + (q ? q + "&" : "?") + "save=1", {});
         Toast.ok("分析快照已保存");
       } catch (error) { handleError(error); }
     };
-    el("btn-export-records").onclick = function () {
+    el("btn-export-records").onclick = () => {
       window.open("/api/v1/ranging/records/export" + filterQuery(), "_blank");
     };
     await loadAnalysis();
@@ -1642,7 +1653,7 @@
     const params = new URLSearchParams();
     [["an-task", "task_type"], ["an-model", "model_name"], ["an-category", "category"],
      ["an-distance", "distance_plan_m"], ["an-size", "size_group"], ["an-illum", "illumination"]]
-      .forEach(function (pair) {
+      .forEach((pair) => {
         const e = el(pair[0]);
         if (e && e.value) params.set(pair[1], e.value);
       });
@@ -1753,13 +1764,13 @@
       { title: "操作", render: r => '<button class="sm" data-edit="' + r.id + '">改真值</button> ' +
         '<button class="sm danger" data-del="' + r.id + '">删除</button>' },
     ]), d.data || [], { empty: "暂无记录" }) +
-      UI.pager(d.total, d.page, d.page_size, function (p) { analysisPage = p; loadRecordsTable(); }));
-    document.querySelectorAll("[data-edit]").forEach(function (btn) {
-      btn.onclick = function () { editRecordModal(btn.dataset.edit); };
+      UI.pager(d.total, d.page, d.page_size, (p) => { analysisPage = p; loadRecordsTable(); }));
+    document.querySelectorAll("[data-edit]").forEach((btn) => {
+      btn.onclick = () => { editRecordModal(btn.dataset.edit); };
     });
-    document.querySelectorAll("[data-del]").forEach(function (btn) {
-      btn.onclick = async function () {
-        if (!confirm("确认删除该记录？")) return;
+    document.querySelectorAll("[data-del]").forEach((btn) => {
+      btn.onclick = async () => {
+        if (!(await Modal.ask("确认删除该记录？"))) return;
         try { await API.del("/api/v1/ranging/records/" + btn.dataset.del); loadAnalysis(); }
         catch (error) { handleError(error); }
       };
@@ -1777,7 +1788,7 @@
       UI.select("er-illum", API.dict().illuminations || [], "") + "</label>" +
       '<label class="field"><span>备注</span><input id="er-notes"></label>',
       '<button data-close="1">取消</button><button class="primary" id="er-save">保存</button>');
-    el("er-save").onclick = async function () {
+    el("er-save").onclick = async () => {
       try {
         await API.patch("/api/v1/ranging/records/" + recordId, {
           distance_actual_m: value("er-actual") || null,
@@ -1817,7 +1828,7 @@
         { title: "操作", render: r => '<button class="sm" data-activate="' + r.id + '">启用</button>' },
       ], items, { scroll: false }) : '<div class="empty">尚无校正方案</div>'));
 
-    el("cal-run").onclick = async function () {
+    el("cal-run").onclick = async () => {
       const bounds = value("cal-bounds").split(",").map(x => parseFloat(x)).filter(x => !isNaN(x));
       try {
         const r = await API.post("/api/v1/analysis/calibrate", {
@@ -1841,8 +1852,8 @@
         loadCalibrationPanel();
       } catch (error) { handleError(error, "拟合失败"); }
     };
-    document.querySelectorAll("[data-activate]").forEach(function (btn) {
-      btn.onclick = async function () {
+    document.querySelectorAll("[data-activate]").forEach((btn) => {
+      btn.onclick = async () => {
         try {
           await API.post("/api/v1/analysis/calibrations/" + btn.dataset.activate + "/activate", {});
           Toast.ok("校正方案已启用");
@@ -1859,16 +1870,16 @@
   /* ================================================================
      可视化大屏
      ================================================================ */
-  Pages.bigscreen = async function () {
+  Pages.bigscreen = async () => {
     html("page-actions", '<button id="bs-refresh">立即刷新</button>' +
       '<button id="bs-full">全屏 (F)</button>' +
       '<button onclick="location.href=\'/analysis\'">进入分析页</button>');
     el("bs-refresh").onclick = loadBigscreen;
-    el("bs-full").onclick = function () {
+    el("bs-full").onclick = () => {
       if (document.fullscreenElement) document.exitFullscreen();
       else document.documentElement.requestFullscreen();
     };
-    document.addEventListener("keydown", function (e) {
+    document.addEventListener("keydown", (e) => {
       if (e.key === "f" || e.key === "F") el("bs-full").click();
     });
     await loadBigscreen();
@@ -1915,8 +1926,12 @@
     const metrics = await API.get("/api/v1/system/metrics");
     const m = metrics.data || {};
     const cam = m.camera || {};
+    let cameraLabel = "未启动";
+    if (cam.running) {
+      cameraLabel = cam.backend === "realsense" ? "RealSense" : "合成场景";
+    }
     html("bs-health", UI.statusLine([
-      ["相机", cam.running ? (cam.backend === "realsense" ? "RealSense" : "合成场景") : "未启动"],
+      ["相机", cameraLabel],
       ["帧数", Fmt.int(cam.frames)], ["实际帧率", cam.fps_actual],
       ["GPU 显存", m.gpu ? m.gpu.mem_used_gb + " / " + m.gpu.mem_total_gb + " GB" : "未启用"],
       ["磁盘剩余", m.disk ? m.disk.free_gb + " GB" : "-"],
@@ -1924,7 +1939,7 @@
     ]) + '<div class="small muted">最后刷新：' + new Date().toLocaleTimeString() + "</div>");
 
     const experiments = await API.get("/api/v1/experiments", { page_size: 6 });
-    html("bs-feed", (experiments.data || []).map(function (e) {
+    html("bs-feed", (experiments.data || []).map((e) => {
       return '<div class="small" style="padding:3px 0">' + Fmt.time(e.created_at) + " " +
         Fmt.taskTag(e.task_type) + " " + Fmt.escape(e.name) + " " + Fmt.statusTag(e.status) + "</div>";
     }).join("") || '<div class="empty">暂无实验</div>');
@@ -1933,7 +1948,7 @@
   /* ================================================================
      报告中心
      ================================================================ */
-  Pages.reports = async function () {
+  Pages.reports = async () => {
     const params = new URLSearchParams(location.search);
     const experimentId = params.get("experiment_id") || "";
     const templates = await API.get("/api/v1/reports/templates");
@@ -1958,7 +1973,7 @@
       "若环境缺少字体或依赖，平台会自动降级为 Markdown 输出。</div>");
     html("page-actions", '<button id="btn-load-reports">刷新列表</button>');
     el("btn-load-reports").onclick = loadReports;
-    el("rp-generate").onclick = async function () {
+    el("rp-generate").onclick = async () => {
       try {
         Toast.info("生成中...");
         const r = await API.post("/api/v1/reports", {
@@ -1987,8 +2002,8 @@
         '<button class="sm danger" data-delreport="' + r.id + '">删除</button>' },
     ], d.data || [], { empty: "暂无报告" }));
 
-    document.querySelectorAll("[data-preview]").forEach(function (btn) {
-      btn.onclick = async function () {
+    document.querySelectorAll("[data-preview]").forEach((btn) => {
+      btn.onclick = async () => {
         const response = await fetch("/api/v1/reports/" + btn.dataset.preview + "/preview",
           { credentials: "same-origin" });
         const text = await response.text();
@@ -1997,15 +2012,15 @@
           Fmt.escape(text) + "</pre>");
       };
     });
-    document.querySelectorAll("[data-share]").forEach(function (btn) {
-      btn.onclick = async function () {
+    document.querySelectorAll("[data-share]").forEach((btn) => {
+      btn.onclick = async () => {
         const r = await API.post("/api/v1/reports/" + btn.dataset.share + "/share", {});
         Modal.open("分享链接", '<p class="small">只读链接（无需登录）：</p><input value="' +
           location.origin + r.data.url + '" readonly>');
       };
     });
-    document.querySelectorAll("[data-delreport]").forEach(function (btn) {
-      btn.onclick = async function () {
+    document.querySelectorAll("[data-delreport]").forEach((btn) => {
+      btn.onclick = async () => {
         try { await API.del("/api/v1/reports/" + btn.dataset.delreport); loadReports(); }
         catch (error) { handleError(error); }
       };
@@ -2015,7 +2030,7 @@
   /* ================================================================
      系统设置
      ================================================================ */
-  Pages.settings = async function () {
+  Pages.settings = async () => {
     const results = await Promise.all([
       API.get("/api/v1/system/info"),
       API.get("/api/v1/system/settings"),
@@ -2034,7 +2049,10 @@
     ]));
 
     const s = results[1].data || {};
-    const cam = s.camera || {}, rng = s.ranging || {}, det = s.detection || {}, seg = s.segmentation || {};
+    const cam = s.camera || {};
+    const rng = s.ranging || {};
+    const det = s.detection || {};
+    const seg = s.segmentation || {};
     html("sys-settings", "<h4>相机</h4>" + UI.defList([
       ["分辨率", (cam.width || "-") + " x " + (cam.height || "-")],
       ["帧率", cam.fps], ["后端", cam.backend],
@@ -2072,7 +2090,7 @@
 
     html("page-actions", '<button class="primary" id="btn-add-user">新建用户</button>' +
       '<button id="btn-self-check">一键自检</button>');
-    el("btn-add-user").onclick = function () {
+    el("btn-add-user").onclick = () => {
       Modal.open("新建用户",
         '<label class="field"><span>用户名</span><input id="u-name"></label>' +
         '<label class="field"><span>密码</span><input id="u-pwd" type="password"></label>' +
@@ -2081,7 +2099,7 @@
         "</select></label>" +
         '<label class="field"><span>显示名</span><input id="u-display"></label>',
         '<button data-close="1">取消</button><button class="primary" id="u-save">创建</button>');
-      el("u-save").onclick = async function () {
+      el("u-save").onclick = async () => {
         try {
           await API.post("/api/v1/users", {
             username: value("u-name"), password: value("u-pwd"),
@@ -2093,15 +2111,15 @@
         } catch (error) { handleError(error); }
       };
     };
-    el("btn-self-check").onclick = async function () {
+    el("btn-self-check").onclick = async () => {
       showSelfCheck((await API.post("/api/v1/system/self-check", {})).data);
     };
-    document.querySelectorAll("[data-reset]").forEach(function (btn) {
-      btn.onclick = function () {
+    document.querySelectorAll("[data-reset]").forEach((btn) => {
+      btn.onclick = () => {
         Modal.open("重置密码",
           '<label class="field"><span>新密码（至少 6 位）</span><input id="r-pwd" type="password"></label>',
           '<button data-close="1">取消</button><button class="primary" id="r-save">保存</button>');
-        el("r-save").onclick = async function () {
+        el("r-save").onclick = async () => {
           try {
             await API.post("/api/v1/users/" + btn.dataset.reset + "/reset-password",
               { new_password: value("r-pwd") });
@@ -2131,7 +2149,7 @@
   /* ================================================================
      日志与监控
      ================================================================ */
-  Pages.monitor = async function () {
+  Pages.monitor = async () => {
     html("filter-bar",
       '<div class="form-row">' +
       '<label class="field"><span>日志级别</span><select id="lg-level">' +
@@ -2142,13 +2160,13 @@
       '<button id="lg-auto">自动刷新：开</button></label></div>');
     el("lg-apply").onclick = loadLogs;
     let auto = true;
-    el("lg-auto").onclick = function () {
+    el("lg-auto").onclick = () => {
       auto = !auto;
       el("lg-auto").textContent = "自动刷新：" + (auto ? "开" : "关");
     };
     html("page-actions", '<button id="btn-self-check2">一键自检</button>' +
       '<button id="btn-metrics">刷新指标</button>');
-    el("btn-self-check2").onclick = async function () {
+    el("btn-self-check2").onclick = async () => {
       showSelfCheck((await API.post("/api/v1/system/self-check", {})).data);
     };
     el("btn-metrics").onclick = loadMetrics;
@@ -2157,7 +2175,7 @@
       const d = await API.get("/api/v1/system/logs",
         { level: value("lg-level"), keyword: value("lg-key"), limit: 300 });
       const rows = (d.data || {}).items || [];
-      html("log-view", rows.length ? rows.map(function (r) {
+      html("log-view", rows.length ? rows.map((r) => {
         return '<div class="log-line ' + r.level + '"><span class="lv">' + r.level + "</span>" +
           '<span class="muted">' + Fmt.escape(r.time) + "</span> " + Fmt.escape(r.message) + "</div>";
       }).join("") : '<div class="empty">暂无日志</div>');
@@ -2166,7 +2184,9 @@
     async function loadMetrics() {
       const d = await API.get("/api/v1/system/metrics");
       const m = d.data || {};
-      const cam = m.camera || {}, gpu = m.gpu || {}, queue = (m.queue || {}).counts || {};
+      const cam = m.camera || {};
+      const gpu = m.gpu || {};
+      const queue = (m.queue || {}).counts || {};
       html("metric-row",
         UI.kpi("相机", cam.running ? "在线" : "离线", cam.backend || "-", cam.running ? "seg" : "danger") +
         UI.kpi("采集帧数", Fmt.int(cam.frames), "累计", "") +
@@ -2189,7 +2209,7 @@
     }
 
     await Promise.all([loadLogs(), loadMetrics()]);
-    addPoller(poll(function () { if (auto) return loadLogs(); }, 4000));
+    addPoller(poll(() => { if (auto) return loadLogs(); }, 4000));
     addPoller(poll(loadMetrics, 6000));
   };
 

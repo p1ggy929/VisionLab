@@ -6,7 +6,8 @@ import csv
 import io
 import json
 import secrets
-from datetime import datetime
+from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -50,16 +51,32 @@ def list_templates() -> list[dict]:
     return [{"key": k, **v} for k, v in TEMPLATES.items()]
 
 
-def create_report(name: str, template: str, fmt: str = "pdf", experiment_id: str | None = None,
-                  project_id: str | None = None, sections: list[str] | None = None,
-                  params: dict | None = None, created_by: str | None = None) -> dict:
+@dataclass(frozen=True)
+class ReportRequest:
+    """报告生成请求：模板、格式、关联对象与章节。"""
+
+    name: str
+    template: str
+    fmt: str = "pdf"
+    experiment_id: str | None = None
+    project_id: str | None = None
+    sections: list[str] | None = None
+    params: dict | None = None
+    created_by: str | None = None
+
+
+def create_report(request: ReportRequest) -> dict:
+    name, template, fmt = request.name, request.template, request.fmt
+    experiment_id, project_id = request.experiment_id, request.project_id
+    sections, params = request.sections, request.params
+    created_by = request.created_by
     if template not in TEMPLATES:
         raise ValidationError(f"未知报告模板: {template}，可选 {list(TEMPLATES)}")
     fmt = str(fmt).lower()
     if fmt not in ("pdf", "md", "csv", "json"):
         raise ValidationError(f"不支持的报告格式: {fmt}")
 
-    payload = _collect(template, experiment_id, project_id, params or {}, sections)
+    payload = collect(template, experiment_id, project_id, params or {}, sections)
     report_id = db.insert("report", {
         "experiment_id": experiment_id, "project_id": project_id,
         "name": name or f"{TEMPLATES[template]['label']} {db.now_iso()}",
@@ -77,7 +94,7 @@ def create_report(name: str, template: str, fmt: str = "pdf", experiment_id: str
         if fmt == "pdf":
             _render_pdf(path, payload)
         elif fmt == "md":
-            path.write_text(_render_markdown(payload), encoding="utf-8")
+            path.write_text(render_markdown(payload), encoding="utf-8")
         elif fmt == "csv":
             _render_csv(path, payload)
         else:
@@ -141,7 +158,7 @@ def delete_report(report_id: str) -> int:
 
 
 # ================================================================== 数据收集
-def _collect(template: str, experiment_id: str | None, project_id: str | None,
+def collect(template: str, experiment_id: str | None, project_id: str | None,
              params: dict, sections: list[str] | None) -> dict:
     from services import analysis_service, dataset_service, project_service
 
@@ -150,7 +167,7 @@ def _collect(template: str, experiment_id: str | None, project_id: str | None,
             "title": TEMPLATES[template]["label"],
             "platform": settings.get("app.name"),
             "version": settings.get("app.version"),
-            "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "generated_at": datetime.now(timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M:%S"),
             "template": template,
             "sections": sections or TEMPLATES[template]["sections"],
         },
@@ -200,7 +217,7 @@ def _collect(template: str, experiment_id: str | None, project_id: str | None,
 
 
 # ================================================================== 渲染
-def _render_markdown(payload: dict) -> str:
+def render_markdown(payload: dict) -> str:
     meta = payload.get("meta", {})
     lines = [f"# {meta.get('platform', '实验平台')} · {meta.get('title', '报告')}", ""]
     lines.append(f"- 生成时间：{meta.get('generated_at')}")
@@ -280,7 +297,7 @@ def _render_csv(path: Path, payload: dict) -> None:
     buffer = io.StringIO()
     if records:
         fieldnames = ["id", "task_type", "strategy", "target_kind", "metric_kind", "model_name",
-                      "category", "size_group", "depth_m", "lateral_m", "depth_m" ,"valid_points",
+                      "category", "size_group", "depth_m", "lateral_m", "valid_points",
                       "distance_actual_m", "error_m", "abs_error_m", "rel_error",
                       "illumination", "distance_plan_m", "record_time"]
         writer = csv.DictWriter(buffer, fieldnames=fieldnames, extrasaction="ignore")
@@ -312,7 +329,7 @@ def _render_pdf(path: Path, payload: dict) -> None:
         from reportlab.platypus import (PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table,
                                         TableStyle)
     except ImportError:
-        path.with_suffix(".md").write_text(_render_markdown(payload), encoding="utf-8")
+        path.with_suffix(".md").write_text(render_markdown(payload), encoding="utf-8")
         return
 
     font_name = "Helvetica"
@@ -372,10 +389,11 @@ def _render_pdf(path: Path, payload: dict) -> None:
     kpi = payload.get("kpi") or {}
     if kpi:
         flow.append(Paragraph("二、总体指标", h_style))
-        add_table([[Paragraph("指标", body), Paragraph("数值", body)]] +
-                  [[Paragraph(k, body), Paragraph(str(kpi.get(k)), body)]
-                   for k in ("projects", "experiments", "models", "images",
-                             "ranging_records", "mean_error_m", "miss_rate")])
+        kpi_rows = [[Paragraph("指标", body), Paragraph("数值", body)]]
+        for key in ("projects", "experiments", "models", "images",
+                    "ranging_records", "mean_error_m", "miss_rate"):
+            kpi_rows.append([Paragraph(key, body), Paragraph(str(kpi.get(key)), body)])
+        add_table(kpi_rows)
 
     metrics = payload.get("metrics") or {}
     if metrics:
@@ -394,8 +412,8 @@ def _render_pdf(path: Path, payload: dict) -> None:
             if not data:
                 continue
             flow.append(Paragraph(f"3.x {title}分组", body))
-            table_rows = [[Paragraph(x, body) for x in
-                           ("分组", "样本数", "有效数", "MAE(m)", "RMSE(m)", "相对误差", "最大误差(m)")]]
+            headers = ("分组", "样本数", "有效数", "MAE(m)", "RMSE(m)", "相对误差", "最大误差(m)")
+            table_rows = [[Paragraph(title, body) for title in headers]]
             for row in data[:25]:
                 table_rows.append([Paragraph(str(row.get("key")), body),
                                    Paragraph(str(row.get("count")), body),

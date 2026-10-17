@@ -26,12 +26,12 @@ def list_datasets():
 def create_dataset():
     data = payload()
     user = current_user()
-    dataset = dataset_service.create_dataset(
+    dataset = dataset_service.create_dataset(dataset_service.DatasetSpec(
         name=str(data.get("name", "")), task_type=str(data.get("task_type", "detection")),
         project_id=data.get("project_id"), scene=str(data.get("scene", "campus_road")),
         class_names=data.get("class_names"), foreground_values=data.get("foreground_values"),
         description=str(data.get("description", "")),
-        created_by=user["username"] if user else None)
+        created_by=user["username"] if user else None))
     return ok(dataset)
 
 
@@ -67,10 +67,10 @@ def list_versions(dataset_id: str):
 @require_perm("dataset:import")
 def create_version(dataset_id: str):
     data = payload()
-    result = dataset_service.create_version(
+    result = dataset_service.create_version(dataset_service.VersionSpec(
         dataset_id, str(data.get("version", "v1.0")), str(data.get("source_root", "")),
         split_ratio=str(data.get("split_ratio", "7:2:1")),
-        split_seed=int(data.get("split_seed", 42)))
+        split_seed=int(data.get("split_seed", 42))))
     return ok(result)
 
 

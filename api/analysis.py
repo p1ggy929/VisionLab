@@ -106,10 +106,10 @@ def calibrate():
             filters[key] = data[key]
     if data.get("experiment_id"):
         filters["experiment_id"] = data["experiment_id"]
-    result = analysis_service.calibrate_from_records(
+    result = analysis_service.calibrate_from_records(analysis_service.CalibrationRequest(
         method=str(data.get("method", "linear")), filters=filters,
         bounds=data.get("boundaries_m"), name=data.get("name"),
-        experiment_id=data.get("experiment_id"))
+        experiment_id=data.get("experiment_id")))
     return ok(result)
 
 
@@ -130,9 +130,9 @@ def activate(plan_id: str):
     row = analysis_service.activate_calibration(plan_id)
     plan = analysis_service.build_plan(row)
     pipeline_service.get_pipeline().set_calibration(plan)
-    payload = dict(row)
-    payload["recommended"] = is_recommended(plan) if plan else False
-    return ok(payload)
+    plan_payload = dict(row)
+    plan_payload["recommended"] = is_recommended(plan) if plan else False
+    return ok(plan_payload)
 
 
 @bp.post("/analysis/calibrations/deactivate")

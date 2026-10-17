@@ -5,6 +5,7 @@ from __future__ import annotations
 from flask import Blueprint
 
 from algorithms import registry as plugin_registry
+from core.db import now_iso
 from core.exceptions import ModelError, NotFoundError
 from services import model_registry, project_service
 
@@ -63,13 +64,13 @@ def list_models():
 @require_perm("model:create")
 def create_model():
     data = payload()
-    model = model_registry.register_model(
+    model = model_registry.register_model(model_registry.ModelRegistration(
         name=str(data.get("name", "")), task_type=str(data.get("task_type", "detection")),
         weights_uri=data.get("weights_uri"), arch=data.get("arch"), variant=data.get("variant"),
         framework=data.get("framework"), project_id=data.get("project_id"),
         num_classes=data.get("num_classes"), class_names=data.get("class_names"),
         metrics=data.get("metrics"), notes=str(data.get("notes", "")),
-        weight_origin=str(data.get("weight_origin", "imported")))
+        weight_origin=str(data.get("weight_origin", "imported"))))
     return ok(model)
 
 
@@ -174,7 +175,7 @@ def start_training():
         if not row:
             raise ModelError("请先创建项目。")
         project_id = row[0]["id"]
-    experiment = project_service.create_experiment(
+    experiment = project_service.create_experiment(project_service.ExperimentSpec(
         project_id=project_id,
         name=str(data.get("name", f"训练 {data.get('arch') or data.get('yolo')}")),
         task_type=str(data.get("task_type", "detection")),
@@ -186,7 +187,7 @@ def start_training():
             "arch": data.get("arch"), "yolo": data.get("yolo"),
             "device": data.get("device"),
         }},
-        created_by=(current_user() or {}).get("username"))
+        created_by=(current_user() or {}).get("username")))
     project_service.set_status(experiment["id"], "queued")
     task = project_service.enqueue(experiment["id"], "train",
                                    {"task_type": experiment["task_type"], **data})
@@ -206,5 +207,5 @@ def training_status(task_id: str):
 @bp.post("/training/<task_id>/stop")
 @require_perm("training:run")
 def stop_training(task_id: str):
-    project_service.update_task(task_id, status="canceled", finished_at=__import__("core.db", fromlist=["now_iso"]).now_iso())
+    project_service.update_task(task_id, status="canceled", finished_at=now_iso())
     return ok({"stopped": True})

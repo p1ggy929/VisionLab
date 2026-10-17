@@ -6,6 +6,7 @@ import json
 import platform
 import subprocess
 import sys
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -26,10 +27,23 @@ RUNNABLE_STATUS = ("configured", "failed", "canceled")
 
 
 # ================================================================== 项目
-def create_project(name: str, description: str = "", scene: str = "campus_road",
-                   app_target: str = "sweeper", owner_id: str | None = None,
-                   config: dict | None = None) -> dict:
-    name = str(name).strip()
+@dataclass(frozen=True)
+class ProjectSpec:
+    """新建项目的描述信息。"""
+
+    name: str
+    description: str = ""
+    scene: str = "campus_road"
+    app_target: str = "sweeper"
+    owner_id: str | None = None
+    config: dict | None = None
+
+
+def create_project(spec: ProjectSpec) -> dict:
+    name = str(spec.name).strip()
+    description, scene = spec.description, spec.scene
+    app_target, owner_id = spec.app_target, spec.owner_id
+    config = spec.config
     if not name:
         raise ValidationError("项目名称不能为空。")
     if db.query_one("SELECT id FROM project WHERE name=? AND is_deleted=0", (name,)):
@@ -41,7 +55,8 @@ def create_project(name: str, description: str = "", scene: str = "campus_road",
     }, id_prefix="p")
     if owner_id:
         db.insert("project_member", {"project_id": project_id, "user_id": owner_id,
-                                     "role_in_project": "owner"}, id_prefix="pm")
+                                     "role_in_project": "owner",
+                                     "joined_at": db.now_iso()}, id_prefix="pm")
     log.info("创建项目: %s (%s)", name, project_id)
     return get_project(project_id) or {}
 
@@ -117,10 +132,28 @@ def list_members(project_id: str) -> list[dict]:
 
 
 # ================================================================== 实验
-def create_experiment(project_id: str, name: str, task_type: str, kind: str = "infer",
-                      dataset_version_id: str | None = None, model_id: str | None = None,
-                      calibration_id: str | None = None, camera_id: str | None = None,
-                      config_snapshot: dict | None = None, created_by: str | None = None) -> dict:
+@dataclass(frozen=True)
+class ExperimentSpec:
+    """新建实验的配置快照。"""
+
+    project_id: str
+    name: str
+    task_type: str
+    kind: str = "infer"
+    dataset_version_id: str | None = None
+    model_id: str | None = None
+    calibration_id: str | None = None
+    camera_id: str | None = None
+    config_snapshot: dict | None = None
+    created_by: str | None = None
+
+
+def create_experiment(spec: ExperimentSpec) -> dict:
+    project_id, name, task_type = spec.project_id, spec.name, spec.task_type
+    kind = spec.kind
+    dataset_version_id, model_id = spec.dataset_version_id, spec.model_id
+    calibration_id, camera_id = spec.calibration_id, spec.camera_id
+    config_snapshot, created_by = spec.config_snapshot, spec.created_by
     if not get_project(project_id):
         raise NotFoundError("项目不存在。")
     if task_type not in TASK_TYPES:
@@ -191,9 +224,21 @@ def get_experiment(experiment_id: str) -> dict | None:
     return exp
 
 
-def list_experiments(page: int = 1, page_size: int = 20, project_id: str | None = None,
-                     task_type: str | None = None, status: str | None = None,
-                     kind: str | None = None) -> dict:
+@dataclass(frozen=True)
+class ExperimentQuery:
+    """实验列表的过滤条件（空值表示不过滤）。"""
+
+    project_id: str | None = None
+    task_type: str | None = None
+    status: str | None = None
+    kind: str | None = None
+
+
+def list_experiments(page: int = 1, page_size: int = 20,
+                     query: ExperimentQuery | None = None) -> dict:
+    query = query or ExperimentQuery()
+    project_id, task_type = query.project_id, query.task_type
+    status, kind = query.status, query.kind
     clauses, params = ["is_deleted=0"], []
     if project_id:
         clauses.append("project_id=?")
@@ -256,14 +301,14 @@ def clone_experiment(experiment_id: str, name: str | None = None,
     exp = get_experiment(experiment_id)
     if exp is None:
         raise NotFoundError("实验不存在。")
-    return create_experiment(
+    return create_experiment(ExperimentSpec(
         project_id=exp["project_id"],
         name=name or f"{exp['name']} 副本",
         task_type=exp["task_type"], kind=exp["kind"],
         dataset_version_id=exp.get("dataset_version_id"), model_id=exp.get("model_id"),
         calibration_id=exp.get("calibration_id"), camera_id=exp.get("camera_id"),
         config_snapshot=dict(exp.get("config_snapshot") or {}), created_by=created_by,
-    )
+    ))
 
 
 def delete_experiment(experiment_id: str) -> int:

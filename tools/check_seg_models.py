@@ -11,13 +11,15 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+    sys.path.append(str(ROOT))
 
 import numpy as np  # noqa: E402
 import torch  # noqa: E402
 
 from algorithms import registry  # noqa: E402
-from core.logging_setup import setup_logging  # noqa: E402
+from core.logging_setup import get_cli_logger, setup_logging  # noqa: E402
+
+log = get_cli_logger("tools.check_seg_models")
 
 DEFAULT_WEIGHTS = Path(r"E:\2Project\2026dachuang\Unet\models")
 PLAN = [
@@ -52,7 +54,8 @@ def try_load(arch: str, weight: Path | None, size=(512, 1024)) -> dict:
         "mask_shape": list(mask.shape) if mask is not None else None,
         "mask_ratio": round(float(mask.mean()), 4) if mask is not None else None,
         "activation": pred.get("output_activation"),
-        "params_m": round(sum(p.numel() for p in plugin._model.parameters()) / 1e6, 2),  # noqa: SLF001
+        "params_m": round(sum(p.numel() for p in plugin.model.parameters()) / 1e6, 2)
+        if plugin.model is not None else None,
         "weight": weight.name if weight else None,
     }
 
@@ -61,9 +64,9 @@ def main() -> int:
     weights_dir = Path(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_WEIGHTS
     setup_logging()
     registry.load_builtin()
-    print(f"PyTorch {torch.__version__}  CUDA={torch.cuda.is_available()}")
-    print(f"权重目录: {weights_dir}  (存在={weights_dir.exists()})")
-    print("=" * 92)
+    log.info(f"PyTorch {torch.__version__}  CUDA={torch.cuda.is_available()}")
+    log.info(f"权重目录: {weights_dir}  (存在={weights_dir.exists()})")
+    log.info("=" * 92)
 
     failures = 0
     for arch, filename in PLAN:
@@ -72,14 +75,14 @@ def main() -> int:
             weight = None
         result = try_load(arch, weight)
         if result["ok"]:
-            print(f"[OK  ] {arch:<12} 权重={result['weight']}  参数={result['params_m']}M  "
+            log.info(f"[OK  ] {arch:<12} 权重={result['weight']}  参数={result['params_m']}M  "
                   f"加载={result['load_ms']}ms  推理={result['infer_ms']}ms  "
                   f"掩膜占比={result['mask_ratio']}  阈值语义={result['activation']}")
         else:
             failures += 1
-            print(f"[FAIL] {arch:<12} 阶段={result['stage']}  {result['error']}")
-    print("=" * 92)
-    print("全部通过" if not failures else f"{failures} 个结构未通过")
+            log.info(f"[FAIL] {arch:<12} 阶段={result['stage']}  {result['error']}")
+    log.info("=" * 92)
+    log.info("全部通过" if not failures else f"{failures} 个结构未通过")
     return 1 if failures else 0
 
 

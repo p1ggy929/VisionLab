@@ -158,7 +158,7 @@ def self_check() -> dict:
 
 
 def metrics() -> dict:
-    data: dict = {"timestamp": time.time(), "queue": _queue_metrics(), "camera": _camera_metrics(),
+    data: dict = {"timestamp": time.time(), "queue": queue_metrics(), "camera": camera_metrics(),
                   "disk": _disk_metrics()}
     try:
         import torch
@@ -183,7 +183,7 @@ def metrics() -> dict:
     return data
 
 
-def _queue_metrics() -> dict:
+def queue_metrics() -> dict:
     rows = db.query_all("SELECT status, COUNT(*) AS n FROM task_queue GROUP BY status")
     out = {r["status"]: r["n"] for r in rows}
     running = db.query_all("SELECT id, task_type, started_at FROM task_queue "
@@ -191,7 +191,7 @@ def _queue_metrics() -> dict:
     return {"counts": out, "running": running}
 
 
-def _camera_metrics() -> dict:
+def camera_metrics() -> dict:
     camera = get_camera_service()
     info = camera.describe()
     return {

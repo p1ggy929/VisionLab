@@ -1,7 +1,7 @@
 /* ============================================================
    视界智研 —— UI 组件与图表（Plotly）
    ============================================================ */
-(function (global) {
+((global) => {
   "use strict";
 
   const Fmt = global.VL.Fmt;
@@ -51,7 +51,7 @@
     },
     line(id, categories, series, layout) {
       if (!series || !series.length) return empty(id, "暂无数据");
-      const traces = series.map(function (s, i) {
+      const traces = series.map((s, i) => {
         return { type: "scatter", mode: "lines+markers", x: categories, y: s.data,
                  name: s.name, line: { color: PALETTE[i % PALETTE.length], width: 2 },
                  marker: { size: 6 } };
@@ -75,7 +75,7 @@
     },
     box(id, groups, layout) {
       if (!groups || !groups.length) return empty(id, "暂无数据");
-      const traces = groups.map(function (g, i) {
+      const traces = groups.map((g, i) => {
         return { type: "box", y: g.values, name: g.name, boxpoints: "outliers",
                  marker: { color: PALETTE[i % PALETTE.length] } };
       });
@@ -90,7 +90,7 @@
     },
     radar(id, labels, series, layout) {
       if (!series || !series.length) return empty(id, "暂无数据");
-      const traces = series.map(function (s, i) {
+      const traces = series.map((s, i) => {
         return { type: "scatterpolar", r: s.data, theta: labels, fill: "toself",
                  name: s.name, line: { color: PALETTE[i % PALETTE.length] } };
       });
@@ -106,7 +106,7 @@
       if (before && before.length) {
         traces.push({ type: "scatter", mode: "markers", x: before.map(p => p.measured),
                       y: before.map(p => p.actual), name: "校正前",
-                      marker: { color: PALETTE[2], size: 7, opacity: .75 } });
+                      marker: { color: PALETTE[2], size: 7, opacity: 0.75 } });
       }
       if (after && after.length) {
         traces.push({ type: "scatter", mode: "markers", x: after.map(p => p.corrected),
@@ -114,7 +114,7 @@
                       marker: { color: PALETTE[1], size: 7, symbol: "triangle-up" } });
       }
       if (!traces.length) return empty(id, "暂无数据");
-      const all = traces.reduce(function (acc, t) { return acc.concat(t.x, t.y); }, []);
+      const all = traces.reduce((acc, t) => { return acc.concat(t.x, t.y); }, []);
       const max = Math.max.apply(null, all) * 1.05;
       traces.push({ type: "scatter", mode: "lines", x: [0, max], y: [0, max], name: "理想 y=x",
                     line: { color: "#6b7887", dash: "dash", width: 1 } });
@@ -123,7 +123,7 @@
     },
     pie(id, labels, values) {
       if (!values || !values.length) return empty(id, "暂无数据");
-      render(id, [{ type: "pie", labels: labels, values: values, hole: .45,
+      render(id, [{ type: "pie", labels: labels, values: values, hole: 0.45,
                     marker: { colors: PALETTE },
                     textinfo: "label+percent", textfont: { size: 11 } }],
         { margin: { l: 10, r: 10, t: 20, b: 10 } });
@@ -145,11 +145,11 @@
       if (!rows || !rows.length) {
         return '<div class="empty">' + Fmt.escape(options.empty || "暂无数据") + "</div>";
       }
-      const head = columns.map(function (c) {
+      const head = columns.map((c) => {
         return '<th class="' + (c.num ? "num" : "") + '">' + Fmt.escape(c.title) + "</th>";
       }).join("");
-      const body = rows.map(function (row, index) {
-        return "<tr>" + columns.map(function (c) {
+      const body = rows.map((row, index) => {
+        return "<tr>" + columns.map((c) => {
           let value;
           if (typeof c.render === "function") value = c.render(row, index);
           else value = Fmt.escape(row[c.key] === undefined ? "" : row[c.key]);
@@ -165,11 +165,11 @@
     pager(total, page, pageSize, onPage) {
       const pages = Math.max(1, Math.ceil((total || 0) / (pageSize || 20)));
       const id = "pager-" + Math.random().toString(36).slice(2, 8);
-      setTimeout(function () {
+      setTimeout(() => {
         const box = document.getElementById(id);
         if (!box) return;
-        box.querySelectorAll("button[data-page]").forEach(function (btn) {
-          btn.onclick = function () { onPage(parseInt(btn.dataset.page, 10)); };
+        box.querySelectorAll("button[data-page]").forEach((btn) => {
+          btn.onclick = () => { onPage(parseInt(btn.dataset.page, 10)); };
         });
       }, 0);
       return '<div class="inline" id="' + id + '" style="justify-content:space-between;margin-top:10px">' +
@@ -183,7 +183,7 @@
 
     gallery(items, urlFn, captionFn) {
       if (!items || !items.length) return '<div class="empty">暂无样本</div>';
-      return '<div class="gallery">' + items.map(function (item) {
+      return '<div class="gallery">' + items.map((item) => {
         const url = urlFn(item);
         const caption = captionFn(item);
         if (!url) return '<figure><figcaption>' + Fmt.escape(caption) + "（无媒体）</figcaption></figure>";
@@ -193,7 +193,7 @@
     },
 
     optionList(items, valueKey, labelKey, selected) {
-      return (items || []).map(function (item) {
+      return (items || []).map((item) => {
         const value = item[valueKey || "key"];
         const label = item[labelKey || "label"];
         return '<option value="' + Fmt.escape(value) + '"' +
@@ -210,7 +210,7 @@
 
     checkboxGroup(name, items, checked) {
       const set = new Set(checked || []);
-      return '<div class="inline">' + (items || []).map(function (item) {
+      return '<div class="inline">' + (items || []).map((item) => {
         const value = item.key !== undefined ? item.key : item;
         const label = item.label !== undefined ? item.label : item;
         return '<label class="inline small"><input type="checkbox" name="' + name +
@@ -221,17 +221,17 @@
 
     checkedValues(name) {
       return Array.prototype.slice.call(document.querySelectorAll('input[name="' + name + '"]:checked'))
-        .map(function (el) { return el.value; });
+        .map((el) => { return el.value; });
     },
 
     statusLine(items) {
-      return '<div class="status-line">' + items.map(function (item) {
+      return '<div class="status-line">' + items.map((item) => {
         return "<span>" + Fmt.escape(item[0]) + " <b>" + (item[1] === null || item[1] === undefined ? "-" : item[1]) + "</b></span>";
       }).join("") + "</div>";
     },
 
     defList(pairs) {
-      return '<table class="kv">' + pairs.map(function (pair) {
+      return '<table class="kv">' + pairs.map((pair) => {
         return "<tr><th>" + Fmt.escape(pair[0]) + "</th><td>" +
           (typeof pair[1] === "string" && pair[1].indexOf("<") === 0 ? pair[1] : Fmt.escape(pair[1])) +
           "</td></tr>";

@@ -23,13 +23,13 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+    sys.path.append(str(ROOT))
 
 from core import db  # noqa: E402
-from core.logging_setup import get_logger, setup_logging  # noqa: E402
+from core.logging_setup import get_cli_logger, setup_logging  # noqa: E402
 from services import analysis_service, dataset_service, model_registry, project_service  # noqa: E402
 
-log = get_logger("tools.import_legacy")
+log = get_cli_logger("tools.import_legacy")
 
 
 def ensure_project(name: str | None) -> str:
@@ -37,12 +37,14 @@ def ensure_project(name: str | None) -> str:
         row = db.query_one("SELECT id FROM project WHERE name=? AND is_deleted=0", (name,))
         if row:
             return row["id"]
-        project = project_service.create_project(name, "历史数据迁移目标项目")
+        project = project_service.create_project(
+            project_service.ProjectSpec(name, "历史数据迁移目标项目"))
         return project["id"]
     row = db.query_one("SELECT id FROM project WHERE is_deleted=0 ORDER BY created_at LIMIT 1")
     if row:
         return row["id"]
-    return project_service.create_project("校园道路视觉感知", "平台默认项目")["id"]
+    return project_service.create_project(
+        project_service.ProjectSpec("校园道路视觉感知", "平台默认项目"))["id"]
 
 
 def main() -> int:
@@ -65,68 +67,68 @@ def main() -> int:
     setup_logging()
     db.init_db()
     project_id = ensure_project(args.project)
-    print(f"目标项目: {project_id}")
+    log.info(f"目标项目: {project_id}")
     result: dict = {}
 
     if args.measurements:
-        print("导入项目 A 的测距记录 ...")
+        log.info("导入项目 A 的测距记录 ...")
         result["measurements"] = analysis_service.import_legacy_measurements(
             args.measurements, project_id)
-        print("  ", json.dumps(result["measurements"], ensure_ascii=False))
+        log.info("  ", json.dumps(result["measurements"], ensure_ascii=False))
 
     if args.distance_records:
-        print("导入项目 B 的测距记录 ...")
+        log.info("导入项目 B 的测距记录 ...")
         result["distance_records"] = analysis_service.import_legacy_distance_records(
             args.distance_records, project_id)
-        print("  ", json.dumps(result["distance_records"], ensure_ascii=False))
+        log.info("  ", json.dumps(result["distance_records"], ensure_ascii=False))
 
     if args.runs:
-        print("扫描项目 A 的训练产物（YOLO 权重）...")
+        log.info("扫描项目 A 的训练产物（YOLO 权重）...")
         result["yolo_models"] = model_registry.scan_yolo_runs(args.runs, project_id)
-        print(f"   导入 {result['yolo_models']['imported']} 个，"
+        log.info(f"   导入 {result['yolo_models']['imported']} 个，"
               f"跳过 {result['yolo_models']['skipped']} 个")
 
     if args.seg_weights:
-        print("扫描项目 B 的分割权重 ...")
+        log.info("扫描项目 B 的分割权重 ...")
         result["seg_models"] = model_registry.scan_segmentation_weights(
             args.seg_weights, project_id, args.best_model)
-        print(f"   导入 {result['seg_models']['imported']} 个，"
+        log.info(f"   导入 {result['seg_models']['imported']} 个，"
               f"跳过 {result['seg_models']['skipped']} 个")
 
     if args.seg_root:
-        print("按原始划分整体导入项目 B 的分割数据集（train + val + test）...")
+        log.info("按原始划分整体导入项目 B 的分割数据集（train + val + test）...")
         result["seg_dataset_full"] = dataset_service.import_legacy_segmentation_full(
             args.seg_root)
-        print("  ", json.dumps(result["seg_dataset_full"], ensure_ascii=False))
+        log.info("  ", json.dumps(result["seg_dataset_full"], ensure_ascii=False))
     elif args.seg_images and args.seg_masks:
-        print("导入项目 B 的分割数据集（单目录）...")
+        log.info("导入项目 B 的分割数据集（单目录）...")
         result["seg_dataset"] = dataset_service.import_legacy_segmentation_dataset(
             args.seg_images, args.seg_masks)
-        print("  ", json.dumps(result["seg_dataset"], ensure_ascii=False))
+        log.info("  ", json.dumps(result["seg_dataset"], ensure_ascii=False))
 
     if args.det_images:
         images_root = Path(args.det_images)
         has_splits = any((images_root / s).exists() for s in ("train", "val", "test"))
         if has_splits:
-            print("按原始划分整体导入项目 A 的检测数据集（train + val）...")
+            log.info("按原始划分整体导入项目 A 的检测数据集（train + val）...")
             result["det_dataset_full"] = dataset_service.import_legacy_detection_full(
                 args.det_images, args.det_labels)
-            print("  ", json.dumps(result["det_dataset_full"], ensure_ascii=False))
+            log.info("  ", json.dumps(result["det_dataset_full"], ensure_ascii=False))
         else:
-            print("导入项目 A 的检测数据集（单目录）...")
+            log.info("导入项目 A 的检测数据集（单目录）...")
             result["det_dataset"] = dataset_service.import_legacy_detection_dataset(
                 args.det_images, limit=args.det_limit)
-            print("  ", json.dumps(result["det_dataset"], ensure_ascii=False))
+            log.info("  ", json.dumps(result["det_dataset"], ensure_ascii=False))
 
-    print("\n完成。数据库统计：")
+    log.info("\n完成。数据库统计：")
     for table, count in db.table_counts().items():
         if count:
-            print(f"   {table:<22} {count}")
+            log.info(f"   {table:<22} {count}")
 
     if result.get("measurements", {}).get("experiment_id"):
         exp_id = result["measurements"]["experiment_id"]
-        print("\n历史数据回归验证（复现原申报书口径）：")
-        print("  ", json.dumps(analysis_service.legacy_summary(exp_id), ensure_ascii=False))
+        log.info("\n历史数据回归验证（复现原申报书口径）：")
+        log.info("  ", json.dumps(analysis_service.legacy_summary(exp_id), ensure_ascii=False))
     return 0
 
 

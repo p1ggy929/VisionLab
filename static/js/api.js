@@ -1,15 +1,17 @@
 /* ============================================================
    视界智研 —— API 客户端与通用工具
    ============================================================ */
-(function (global) {
+((global) => {
   "use strict";
 
-  const TOKEN_KEY = "visionlab_token";
   const USER_KEY = "visionlab_user";
   const PROJECT_KEY = "visionlab_project";
+  // 会话令牌只保存在内存中，持久化由服务端下发的 HttpOnly Cookie 承担，
+  // 避免敏感凭据落入 localStorage 被脚本读取（G.WST.01）。
+  const LEGACY_TOKEN_KEY = "visionlab_token";
 
   const State = {
-    token: localStorage.getItem(TOKEN_KEY) || "",
+    token: "",
     user: safeParse(localStorage.getItem(USER_KEY)) || null,
     projectId: localStorage.getItem(PROJECT_KEY) || "",
     dict: null,
@@ -17,17 +19,16 @@
     socket: null,
   };
 
+  // 清理旧版本遗留在 localStorage 中的令牌。
+  try { localStorage.removeItem(LEGACY_TOKEN_KEY); } catch (e) { /* 存储不可用时忽略 */ }
+
   function safeParse(text) {
     try { return text ? JSON.parse(text) : null; } catch (e) { return null; }
   }
 
   function setToken(token, user) {
+    // 令牌仅驻留内存；页面刷新后由 HttpOnly Cookie 恢复会话。
     State.token = token || "";
-    if (token) {
-      localStorage.setItem(TOKEN_KEY, token);
-    } else {
-      localStorage.removeItem(TOKEN_KEY);
-    }
     if (user) {
       State.user = user;
       localStorage.setItem(USER_KEY, JSON.stringify(user));
@@ -37,11 +38,11 @@
   function qs(params) {
     if (!params) return "";
     const parts = [];
-    Object.keys(params).forEach(function (key) {
+    Object.keys(params).forEach((key) => {
       const value = params[key];
       if (value === undefined || value === null || value === "") return;
       if (Array.isArray(value)) {
-        value.forEach(function (v) { parts.push(encodeURIComponent(key) + "=" + encodeURIComponent(v)); });
+        value.forEach((v) => { parts.push(encodeURIComponent(key) + "=" + encodeURIComponent(v)); });
       } else {
         parts.push(encodeURIComponent(key) + "=" + encodeURIComponent(value));
       }
@@ -52,7 +53,7 @@
   async function request(method, path, options) {
     options = options || {};
     const headers = Object.assign({}, options.headers || {});
-    if (State.token) headers["Authorization"] = "Bearer " + State.token;
+    if (State.token) headers.Authorization = "Bearer " + State.token;
     let body = options.body;
     if (body && !(body instanceof FormData)) {
       headers["Content-Type"] = "application/json";
@@ -152,7 +153,8 @@
     bytes(value) {
       if (!value) return "0 B";
       const units = ["B", "KB", "MB", "GB", "TB"];
-      let v = Number(value), i = 0;
+      let v = Number(value);
+      let i = 0;
       while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
       return v.toFixed(1) + " " + units[i];
     },
@@ -170,7 +172,8 @@
       return '<span class="tag ' + (map[value] || "") + '">' + label + "</span>";
     },
     sizeGroup(value) {
-      return value === "small" ? "小目标" : (value === "large" ? "大目标" : "-");
+      const labels = { small: "小目标", large: "大目标" };
+      return labels[value] || "-";
     },
     illum(value) {
       const items = API.dict().illuminations || [];
@@ -193,7 +196,7 @@
       el.className = "toast " + (type || "");
       el.textContent = message;
       box.appendChild(el);
-      setTimeout(function () {
+      setTimeout(() => {
         el.style.transition = "opacity .3s";
         el.style.opacity = "0";
         setTimeout(() => el.remove(), 320);
@@ -211,6 +214,13 @@
     Toast.err(message);
   }
 
+  let pendingConfirm = null;
+
+  function hideModalRoot() {
+    const root = document.getElementById("modal-root");
+    if (root) root.classList.add("hidden");
+  }
+
   const Modal = {
     open(title, bodyHtml, footerHtml) {
       const root = document.getElementById("modal-root");
@@ -219,12 +229,39 @@
       const footer = document.getElementById("modal-footer");
       footer.innerHTML = footerHtml || '<button data-close="1">关闭</button>';
       root.classList.remove("hidden");
-      root.querySelectorAll("[data-close]").forEach(function (el) {
-        el.onclick = function () { Modal.close(); };
+      root.querySelectorAll("[data-close]").forEach((el) => {
+        el.onclick = () => { Modal.close(); };
       });
     },
     close() {
-      document.getElementById("modal-root").classList.add("hidden");
+      hideModalRoot();
+      if (pendingConfirm) {
+        const settle = pendingConfirm;
+        pendingConfirm = null;
+        settle(false);
+      }
+    },
+    // 自建确认框：返回 Promise<boolean>，避免使用浏览器原生弹窗（AOD.04）。
+    ask(message, title) {
+      return new Promise((resolve) => {
+        if (pendingConfirm) {
+          const previous = pendingConfirm;
+          pendingConfirm = null;
+          previous(false);
+        }
+        Modal.open(title || "操作确认", '<p class="muted">' + Fmt.escape(message) + "</p>",
+          '<button data-confirm="0">取消</button><button class="danger" data-confirm="1">确定</button>');
+        pendingConfirm = resolve;
+        document.getElementById("modal-footer").querySelectorAll("[data-confirm]").forEach((btn) => {
+          btn.onclick = () => {
+            const accepted = btn.dataset.confirm === "1";
+            const settle = pendingConfirm;
+            pendingConfirm = null;
+            hideModalRoot();
+            if (settle) settle(accepted);
+          };
+        });
+      });
     },
     body() { return document.getElementById("modal-body"); },
     footer() { return document.getElementById("modal-footer"); },
@@ -250,8 +287,8 @@
     if (!global.io || !window.VISIONLAB || !window.VISIONLAB.hasSocket) return null;
     try {
       const socket = global.io({ transports: ["websocket", "polling"] });
-      socket.on("connect", function () { socket.emit("subscribe", { channel: "stream" }); });
-      socket.on("frame", function (payload) { if (onFrame) onFrame(payload); });
+      socket.on("connect", () => { socket.emit("subscribe", { channel: "stream" }); });
+      socket.on("frame", (payload) => { if (onFrame) onFrame(payload); });
       State.socket = socket;
       return socket;
     } catch (e) {

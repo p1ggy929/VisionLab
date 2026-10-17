@@ -11,9 +11,12 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+    sys.path.append(str(ROOT))
 
 from app import bootstrap_data, create_app  # noqa: E402
+from core.logging_setup import get_cli_logger  # noqa: E402
+
+log = get_cli_logger("tools.check_api")
 
 FAILURES: list[str] = []
 
@@ -27,14 +30,14 @@ def show(tag: str, resp, keys=None, expect: int = 200) -> dict:
     ok = status == expect
     if not ok:
         FAILURES.append(tag)
-    print(f"[{'OK ' if ok else 'ERR'}] {tag:<46} HTTP {status}")
+    log.info(f"[{'OK ' if ok else 'ERR'}] {tag:<46} HTTP {status}")
     if not ok and data:
-        print("      ", json.dumps(data, ensure_ascii=False)[:300])
+        log.info("      ", json.dumps(data, ensure_ascii=False)[:300])
     if ok and data and keys:
         payload = data.get("data")
         for key in keys:
             source = payload if isinstance(payload, dict) else (data if isinstance(data, dict) else {})
-            print(f"        {key} = {json.dumps(source.get(key), ensure_ascii=False)[:120]}")
+            log.info(f"        {key} = {json.dumps(source.get(key), ensure_ascii=False)[:120]}")
     return data or {}
 
 
@@ -43,21 +46,21 @@ def main() -> int:
     bootstrap_data()
     client = app.test_client()
 
-    print("=" * 72)
-    print("1) 认证")
+    log.info("=" * 72)
+    log.info("1) 认证")
     data = show("POST /auth/login",
                 client.post("/api/v1/auth/login",
                             json={"username": "admin", "password": "admin123"}))
     token = (data.get("data") or {}).get("token")
     if not token:
-        print("登录失败，终止")
+        log.info("登录失败，终止")
         return 1
     headers = {"Authorization": f"Bearer {token}"}
     show("GET  /auth/me", client.get("/api/v1/auth/me", headers=headers))
     show("GET  /system/info", client.get("/api/v1/system/info", headers=headers))
 
-    print("=" * 72)
-    print("2) 系统与相机")
+    log.info("=" * 72)
+    log.info("2) 系统与相机")
     show("POST /system/self-check", client.post("/api/v1/system/self-check", headers=headers))
     show("GET  /camera/status", client.get("/api/v1/camera/status", headers=headers),
          ["backend", "running"])
@@ -68,8 +71,8 @@ def main() -> int:
     show("GET  /camera/depth-probe", client.get("/api/v1/camera/depth-probe", headers=headers))
     show("POST /camera/calibrate", client.post("/api/v1/camera/calibrate", json={}, headers=headers))
 
-    print("=" * 72)
-    print("3) 双策略同跑流水线")
+    log.info("=" * 72)
+    log.info("3) 双策略同跑流水线")
     show("GET  /pipeline/config", client.get("/api/v1/pipeline/config", headers=headers))
     show("POST /pipeline/config",
          client.post("/api/v1/pipeline/config",
@@ -80,12 +83,12 @@ def main() -> int:
     payload = result.get("data") or {}
     detection = payload.get("detection") or {}
     road = payload.get("road") or {}
-    print(f"        检出 {len(detection.get('detections') or [])} 个目标；"
+    log.info(f"        检出 {len(detection.get('detections') or [])} 个目标；"
           f"走廊宽度 {road.get('corridor_width_m')} m；"
           f"叠加图 {len(payload.get('overlay_base64') or '')} 字节(base64)")
 
-    print("=" * 72)
-    print("4) 实验会话与测距记录")
+    log.info("=" * 72)
+    log.info("4) 实验会话与测距记录")
     session = show("POST /pipeline/session/start",
                    client.post("/api/v1/pipeline/session/start",
                                json={"name": "离线冒烟实验", "task_type": "joint"}, headers=headers))
@@ -94,15 +97,15 @@ def main() -> int:
     bulk = show("POST /ranging/records/bulk",
                 client.post("/api/v1/ranging/records/bulk",
                             json={"illumination": "sunny", "actual": truth}, headers=headers))
-    print("        落库记录数 =", (bulk.get("data") or {}).get("created"))
+    log.info("        落库记录数 =", (bulk.get("data") or {}).get("created"))
     show("POST /pipeline/save-frame", client.post("/api/v1/pipeline/save-frame", headers=headers))
     show("POST /pipeline/session/stop", client.post("/api/v1/pipeline/session/stop", headers=headers))
 
-    print("=" * 72)
-    print("5) 误差分析与校正")
+    log.info("=" * 72)
+    log.info("5) 误差分析与校正")
     stats = show("GET  /analysis/summary", client.get("/api/v1/analysis/summary", headers=headers))
     summary = stats.get("data") or {}
-    print(f"        样本 {summary.get('sample_count')} 有效 {summary.get('valid_count')} "
+    log.info(f"        样本 {summary.get('sample_count')} 有效 {summary.get('valid_count')} "
           f"MAE={summary.get('mae_m')} RMSE={summary.get('rmse_m')}")
     show("GET  /analysis/distributions", client.get("/api/v1/analysis/distributions", headers=headers))
     show("GET  /analysis/heatmap", client.get("/api/v1/analysis/heatmap", headers=headers))
@@ -110,8 +113,8 @@ def main() -> int:
     show("POST /analysis/calibrate",
          client.post("/api/v1/analysis/calibrate", json={"method": "piecewise"}, headers=headers))
 
-    print("=" * 72)
-    print("6) 大屏与报告")
+    log.info("=" * 72)
+    log.info("6) 大屏与报告")
     show("GET  /dashboard/overview", client.get("/api/v1/dashboard/overview", headers=headers))
     report = show("POST /reports",
                   client.post("/api/v1/reports",
@@ -122,16 +125,16 @@ def main() -> int:
     show("GET  /reports/<id>/download",
          client.get(f"/api/v1/reports/{report_id}/download", headers=headers))
 
-    print("=" * 72)
-    print("7) 模型与数据集")
+    log.info("=" * 72)
+    log.info("7) 模型与数据集")
     show("GET  /models", client.get("/api/v1/models", headers=headers))
     show("POST /models/scan-artifacts",
          client.post("/api/v1/models/scan-artifacts", json={}, headers=headers))
     show("GET  /datasets", client.get("/api/v1/datasets", headers=headers))
     show("GET  /system/dict", client.get("/api/v1/system/dict", headers=headers))
 
-    print("=" * 72)
-    print("8) 页面路由")
+    log.info("=" * 72)
+    log.info("8) 页面路由")
     for path in ("/", "/projects", "/experiments", "/experiments/ranging", "/camera/capture",
                  "/camera/calibration", "/datasets", "/annotations", "/models", "/training",
                  "/experiments/detection", "/experiments/segmentation", "/analysis",
@@ -140,15 +143,15 @@ def main() -> int:
         ok = response.status_code == 200
         if not ok:
             FAILURES.append("GET " + path)
-        print(f"[{'OK ' if ok else 'ERR'}] GET  {path:<42} HTTP {response.status_code}")
+        log.info(f"[{'OK ' if ok else 'ERR'}] GET  {path:<42} HTTP {response.status_code}")
 
-    print("=" * 72)
+    log.info("=" * 72)
     if FAILURES:
-        print(f"API 冒烟测试完成：{len(FAILURES)} 项未通过")
+        log.info(f"API 冒烟测试完成：{len(FAILURES)} 项未通过")
         for name in FAILURES:
-            print("   - " + name)
+            log.info("   - " + name)
         return 1
-    print("API 冒烟测试全部通过")
+    log.info("API 冒烟测试全部通过")
     return 0
 
 

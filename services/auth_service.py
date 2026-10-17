@@ -2,16 +2,18 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import hashlib
 import hmac
 import os
 import secrets
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from core import db
 from core.config import settings
-from core.exceptions import AuthError, PermissionError_, ValidationError
+from core.exceptions import AuthError, PermissionDeniedError, ValidationError
 from core.logging_setup import get_logger
 
 log = get_logger("services.auth")
@@ -71,7 +73,8 @@ def _secret() -> bytes:
 
 
 def issue_token(user: dict) -> str:
-    expires = datetime.now() + timedelta(hours=int(settings.get("server.session_hours", 12)))
+    expires = datetime.now(timezone.utc) + timedelta(
+        hours=int(settings.get("server.session_hours", 12)))
     payload = f"{user['id']}|{user['username']}|{user['role']}|{int(expires.timestamp())}"
     signature = hmac.new(_secret(), payload.encode("utf-8"), hashlib.sha256).hexdigest()
     return f"{payload}|{signature}"
@@ -86,7 +89,7 @@ def parse_token(token: str) -> dict:
     expected = hmac.new(_secret(), payload.encode("utf-8"), hashlib.sha256).hexdigest()
     if not hmac.compare_digest(expected, signature):
         raise AuthError("令牌签名校验失败，请重新登录。")
-    if int(exp) < int(datetime.now().timestamp()):
+    if int(exp) < int(datetime.now(timezone.utc).timestamp()):
         raise AuthError("登录已过期，请重新登录。")
     return {"id": user_id, "username": username, "role": role}
 
@@ -159,18 +162,28 @@ def change_password(user_id: str, old_password: str, new_password: str) -> int:
     return reset_password(user_id, new_password)
 
 
+def _parse_timestamp(text: str) -> datetime:
+    """解析库里的时间戳；历史数据可能不带时区，按 UTC 处理以保证可比较。"""
+    parsed = datetime.fromisoformat(text)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
 # ------------------------------------------------------------------ 登录
 def login(username: str, password: str, ip: str = "") -> dict:
     user = get_user_by_name(username)
     if user is None:
-        audit(None, username, "login", "user", None, "failed", ip, {"reason": "no_such_user"})
+        audit(AuditEvent(None, username, "login", "user", None, "failed", ip,
+                         {"reason": "no_such_user"}))
         raise AuthError("用户名或密码错误。")
     if not int(user.get("is_active", 1)):
         raise AuthError("账号已被禁用，请联系管理员。")
 
     locked_until = user.get("locked_until")
-    if locked_until and datetime.fromisoformat(locked_until) > datetime.now():
-        remaining = int((datetime.fromisoformat(locked_until) - datetime.now()).total_seconds())
+    lock_deadline = _parse_timestamp(locked_until) if locked_until else None
+    if lock_deadline and lock_deadline > datetime.now(timezone.utc):
+        remaining = int((lock_deadline - datetime.now(timezone.utc)).total_seconds())
         raise AuthError(f"账号已锁定，请 {remaining} 秒后重试。")
 
     if not verify_password(password, user["password_hash"]):
@@ -179,15 +192,16 @@ def login(username: str, password: str, ip: str = "") -> dict:
         max_fail = int(settings.get("security.max_login_failures", 5))
         if failures >= max_fail:
             lock_seconds = int(settings.get("security.lock_seconds", 60))
-            payload["locked_until"] = (datetime.now() + timedelta(seconds=lock_seconds)).isoformat()
+            payload["locked_until"] = (datetime.now(timezone.utc)
+                                       + timedelta(seconds=lock_seconds)).isoformat()
         db.update("user", user["id"], payload)
-        audit(user["id"], username, "login", "user", user["id"], "failed", ip,
-              {"reason": "bad_password", "failures": failures})
+        audit(AuditEvent(user["id"], username, "login", "user", user["id"], "failed", ip,
+                         {"reason": "bad_password", "failures": failures}))
         raise AuthError("用户名或密码错误。")
 
     db.update("user", user["id"], {"failed_attempts": 0, "locked_until": None,
                                    "last_login_at": db.now_iso()})
-    audit(user["id"], username, "login", "user", user["id"], "success", ip)
+    audit(AuditEvent(user["id"], username, "login", "user", user["id"], "success", ip))
     return {
         "token": issue_token(user),
         "user": {"id": user["id"], "username": user["username"],
@@ -218,19 +232,31 @@ def require(user: dict | None, action: str) -> None:
     if user is None:
         raise AuthError("请先登录。")
     if not check_permission(user, action):
-        raise PermissionError_(f"当前角色（{ROLE_LABELS.get(user.get('role'), user.get('role'))}）"
+        raise PermissionDeniedError(f"当前角色（{ROLE_LABELS.get(user.get('role'), user.get('role'))}）"
                                f"没有执行 [{action}] 的权限。")
 
 
 # ------------------------------------------------------------------ 审计
-def audit(user_id: str | None, username: str | None, action: str, resource_type: str = "",
-          resource_id: str | None = None, result: str = "success", ip: str = "",
-          detail: dict | None = None) -> None:
+@dataclass(frozen=True)
+class AuditEvent:
+    """一条审计日志事件。"""
+
+    user_id: str | None
+    username: str | None
+    action: str
+    resource_type: str = ""
+    resource_id: str | None = None
+    result: str = "success"
+    ip: str = ""
+    detail: dict | None = None
+
+
+def audit(event: AuditEvent) -> None:
     try:
         db.insert("audit_log", {
-            "user_id": user_id, "username": username, "action": action,
-            "resource_type": resource_type, "resource_id": resource_id,
-            "result": result, "ip": ip, "detail": detail or {},
+            "user_id": event.user_id, "username": event.username, "action": event.action,
+            "resource_type": event.resource_type, "resource_id": event.resource_id,
+            "result": event.result, "ip": event.ip, "detail": event.detail or {},
         }, id_prefix="aud")
     except Exception as exc:  # noqa: BLE001 - 审计失败不得影响主流程
         log.warning("写入审计日志失败: %s", exc)

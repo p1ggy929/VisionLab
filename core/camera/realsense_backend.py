@@ -112,7 +112,12 @@ class RealSenseBackend(CameraBackend):
             "temporal": lambda: rs.temporal_filter(),
             "hole_filling": lambda: rs.hole_filling_filter(),
         }
-        self._filters = [mapping[n]() for n in self.filter_names if n in mapping]
+        filters = []
+        for name in self.filter_names:
+            factory = mapping.get(name)
+            if factory is not None:
+                filters.append(factory())
+        self._filters = filters
 
     def start(self) -> None:
         if self._running.is_set():

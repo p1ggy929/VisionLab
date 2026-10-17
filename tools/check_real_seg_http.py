@@ -12,10 +12,13 @@ import urllib.error
 import urllib.request
 from http.cookiejar import CookieJar
 from pathlib import Path
-
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+    sys.path.append(str(ROOT))
+
+from core.logging_setup import get_cli_logger  # noqa: E402
+
+log = get_cli_logger("tools.check_real_seg_http")
 
 ARCH_WEIGHTS = {
     "unet": "Unet_1000_best.pth",
@@ -58,7 +61,7 @@ def main() -> int:
     login = client.call("POST", "/api/v1/auth/login",
                         {"username": "admin", "password": "admin123"})
     if login.get("code") != 0:
-        print("登录失败:", login.get("message"))
+        log.info("登录失败:", login.get("message"))
         return 1
     client.token = login["data"]["token"]
 
@@ -69,14 +72,14 @@ def main() -> int:
             if model["variant"] == "1000" or model["name"].endswith("_best"):
                 found.setdefault(model["arch"], model)
             found.setdefault(model["arch"], model)
-    print("已登记的分割结构:", sorted(set(found)))
+    log.info("已登记的分割结构:", sorted(set(found)))
 
     targets = [args.arch] if args.arch else list(ARCH_WEIGHTS)
     failures = 0
     for arch in targets:
         model = found.get(arch)
         if model is None:
-            print(f"[SKIP] {arch}: 模型仓库中没有该结构")
+            log.info(f"[SKIP] {arch}: 模型仓库中没有该结构")
             continue
         config = client.call("POST", "/api/v1/pipeline/config",
                              {"mode": "segmentation", "segmenter_key": arch,
@@ -87,18 +90,18 @@ def main() -> int:
         ok = not errors and road.get("mask_area_ratio") is not None
         if not ok:
             failures += 1
-        print(f"[{'OK ' if ok else 'FAIL'}] {arch:<12} 权重={model['name']:<22} "
+        log.info(f"[{'OK ' if ok else 'FAIL'}] {arch:<12} 权重={model['name']:<22} "
               f"掩膜占比={road.get('mask_area_ratio')}  分割耗时={road.get('infer_ms')} ms  "
               f"左边界={((road.get('left') or {}).get('min') or {}).get('depth_m')} m  "
               f"走廊={road.get('corridor_width_m')} m")
         if errors:
-            print("        加载错误:", errors)
+            log.info("        加载错误:", errors)
         if road.get("arch"):
-            print(f"        实际使用结构: {road.get('arch')}")
+            log.info(f"        实际使用结构: {road.get('arch')}")
 
     client.call("POST", "/api/v1/pipeline/config",
                 {"mode": "both", "segmenter_key": "classical_road", "segmenter_model_id": None})
-    print("\n" + ("全部结构通过服务端验证" if not failures else f"{failures} 个结构未通过"))
+    log.info("\n" + ("全部结构通过服务端验证" if not failures else f"{failures} 个结构未通过"))
     return 1 if failures else 0
 
 

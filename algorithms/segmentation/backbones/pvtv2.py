@@ -1,14 +1,12 @@
+import math
+from functools import partial
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from functools import partial
-
 from timm.models.layers import DropPath, to_2tuple, trunc_normal_
 from timm.models.registry import register_model
 from timm.models.vision_transformer import _cfg
-from timm.models.registry import register_model
-
-import math
 
 
 class Mlp(nn.Module):
@@ -39,9 +37,9 @@ class Mlp(nn.Module):
             if m.bias is not None:
                 m.bias.data.zero_()
 
-    def forward(self, x, H, W):
+    def forward(self, x, h, w):
         x = self.fc1(x)
-        x = self.dwconv(x, H, W)
+        x = self.dwconv(x, h, w)
         x = self.act(x)
         x = self.drop(x)
         x = self.fc2(x)
@@ -52,7 +50,8 @@ class Mlp(nn.Module):
 class Attention(nn.Module):
     def __init__(self, dim, num_heads=8, qkv_bias=False, qk_scale=None, attn_drop=0., proj_drop=0., sr_ratio=1):
         super().__init__()
-        assert dim % num_heads == 0, f"dim {dim} should be divided by num_heads {num_heads}."
+        if dim % num_heads != 0:
+            raise ValueError(f"dim {dim} should be divided by num_heads {num_heads}.")
 
         self.dim = dim
         self.num_heads = num_heads
@@ -87,24 +86,24 @@ class Attention(nn.Module):
             if m.bias is not None:
                 m.bias.data.zero_()
 
-    def forward(self, x, H, W):
-        B, N, C = x.shape
-        q = self.q(x).reshape(B, N, self.num_heads, C // self.num_heads).permute(0, 2, 1, 3)
+    def forward(self, x, h, w):
+        b, n, c = x.shape
+        q = self.q(x).reshape(b, n, self.num_heads, c // self.num_heads).permute(0, 2, 1, 3)
 
         if self.sr_ratio > 1:
-            x_ = x.permute(0, 2, 1).reshape(B, C, H, W)
-            x_ = self.sr(x_).reshape(B, C, -1).permute(0, 2, 1)
+            x_ = x.permute(0, 2, 1).reshape(b, c, h, w)
+            x_ = self.sr(x_).reshape(b, c, -1).permute(0, 2, 1)
             x_ = self.norm(x_)
-            kv = self.kv(x_).reshape(B, -1, 2, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4)
+            kv = self.kv(x_).reshape(b, -1, 2, self.num_heads, c // self.num_heads).permute(2, 0, 3, 1, 4)
         else:
-            kv = self.kv(x).reshape(B, -1, 2, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4)
+            kv = self.kv(x).reshape(b, -1, 2, self.num_heads, c // self.num_heads).permute(2, 0, 3, 1, 4)
         k, v = kv[0], kv[1]
 
         attn = (q @ k.transpose(-2, -1)) * self.scale
         attn = attn.softmax(dim=-1)
         attn = self.attn_drop(attn)
 
-        x = (attn @ v).transpose(1, 2).reshape(B, N, C)
+        x = (attn @ v).transpose(1, 2).reshape(b, n, c)
         x = self.proj(x)
         x = self.proj_drop(x)
 
@@ -144,9 +143,9 @@ class Block(nn.Module):
             if m.bias is not None:
                 m.bias.data.zero_()
 
-    def forward(self, x, H, W):
-        x = x + self.drop_path(self.attn(self.norm1(x), H, W))
-        x = x + self.drop_path(self.mlp(self.norm2(x), H, W))
+    def forward(self, x, h, w):
+        x = x + self.drop_path(self.attn(self.norm1(x), h, w))
+        x = x + self.drop_path(self.mlp(self.norm2(x), h, w))
 
         return x
 
@@ -155,15 +154,15 @@ class OverlapPatchEmbed(nn.Module):
     """ Image to Patch Embedding
     """
 
-    def __init__(self, img_size=224, patch_size=7, stride=4,in_chans=3,embed_dim=768):
+    def __init__(self, img_size=224, patch_size=7, stride=4, in_chans=3, embed_dim=768):
         super().__init__()
         img_size = to_2tuple(img_size)
         patch_size = to_2tuple(patch_size)
 
         self.img_size = img_size
         self.patch_size = patch_size
-        self.H, self.W = img_size[0] // patch_size[0], img_size[1] // patch_size[1]
-        self.num_patches = self.H * self.W
+        self.height, self.width = img_size[0] // patch_size[0], img_size[1] // patch_size[1]
+        self.num_patches = self.height * self.width
         self.proj = nn.Conv2d(in_chans, embed_dim, kernel_size=patch_size, stride=stride,
                               padding=(patch_size[0] // 2, patch_size[1] // 2))
         self.norm = nn.LayerNorm(embed_dim)
@@ -187,18 +186,18 @@ class OverlapPatchEmbed(nn.Module):
 
     def forward(self, x):
         x = self.proj(x)
-        _, _, H, W = x.shape
+        _, _, h, w = x.shape
         x = x.flatten(2).transpose(1, 2)
         x = self.norm(x)
 
-        return x, H, W
+        return x, h, w
 
 
 class PyramidVisionTransformerImpr(nn.Module):
-    def __init__(self, img_size=224, patch_size=16, in_chans=3, num_classes=1000, embed_dims=[64, 128, 256, 512],
-                 num_heads=[1, 2, 4, 8], mlp_ratios=[4, 4, 4, 4], qkv_bias=False, qk_scale=None, drop_rate=0.,
+    def __init__(self, img_size=224, patch_size=16, in_chans=3, num_classes=1000, embed_dims=(64, 128, 256, 512),
+                 num_heads=(1, 2, 4, 8), mlp_ratios=(4, 4, 4, 4), qkv_bias=False, qk_scale=None, drop_rate=0.,
                  attn_drop_rate=0., drop_path_rate=0., norm_layer=nn.LayerNorm,
-                 depths=[3, 4, 6, 3], sr_ratios=[8, 4, 2, 1]):
+                 depths=(3, 4, 6, 3), sr_ratios=(8, 4, 2, 1)):
         super().__init__()
         self.num_classes = num_classes
         self.depths = depths
@@ -270,7 +269,7 @@ class PyramidVisionTransformerImpr(nn.Module):
     def init_weights(self, pretrained=None):
         if isinstance(pretrained, str):
             logger = 1
-            #load_checkpoint(self, pretrained, map_location='cpu', strict=False, logger=logger)
+            # load_checkpoint(self, pretrained, map_location='cpu', strict=False, logger=logger)
 
     def reset_drop_path(self, drop_path_rate):
         dpr = [x.item() for x in torch.linspace(0, drop_path_rate, sum(self.depths))]
@@ -304,48 +303,48 @@ class PyramidVisionTransformerImpr(nn.Module):
         self.num_classes = num_classes
         self.head = nn.Linear(self.embed_dim, num_classes) if num_classes > 0 else nn.Identity()
 
-    # def _get_pos_embed(self, pos_embed, patch_embed, H, W):
-    #     if H * W == self.patch_embed1.num_patches:
+    # def _get_pos_embed(self, pos_embed, patch_embed, h, w):
+    #     if h * w == self.patch_embed1.num_patches:
     #         return pos_embed
     #     else:
     #         return F.interpolate(
-    #             pos_embed.reshape(1, patch_embed.H, patch_embed.W, -1).permute(0, 3, 1, 2),
-    #             size=(H, W), mode="bilinear").reshape(1, -1, H * W).permute(0, 2, 1)
+    #             pos_embed.reshape(1, patch_embed.h, patch_embed.w, -1).permute(0, 3, 1, 2),
+    #             size=(h, w), mode="bilinear").reshape(1, -1, h * w).permute(0, 2, 1)
 
     def forward_features(self, x):
-        B = x.shape[0]
+        b = x.shape[0]
         outs = []
 
         # stage 1
-        x, H, W = self.patch_embed1(x)
+        x, h, w = self.patch_embed1(x)
         for i, blk in enumerate(self.block1):
-            x = blk(x, H, W)
+            x = blk(x, h, w)
         x = self.norm1(x)
-        x = x.reshape(B, H, W, -1).permute(0, 3, 1, 2).contiguous()
+        x = x.reshape(b, h, w, -1).permute(0, 3, 1, 2).contiguous()
         outs.append(x)
 
         # stage 2
-        x, H, W = self.patch_embed2(x)
+        x, h, w = self.patch_embed2(x)
         for i, blk in enumerate(self.block2):
-            x = blk(x, H, W)
+            x = blk(x, h, w)
         x = self.norm2(x)
-        x = x.reshape(B, H, W, -1).permute(0, 3, 1, 2).contiguous()
+        x = x.reshape(b, h, w, -1).permute(0, 3, 1, 2).contiguous()
         outs.append(x)
 
         # stage 3
-        x, H, W = self.patch_embed3(x)
+        x, h, w = self.patch_embed3(x)
         for i, blk in enumerate(self.block3):
-            x = blk(x, H, W)
+            x = blk(x, h, w)
         x = self.norm3(x)
-        x = x.reshape(B, H, W, -1).permute(0, 3, 1, 2).contiguous()
+        x = x.reshape(b, h, w, -1).permute(0, 3, 1, 2).contiguous()
         outs.append(x)
 
         # stage 4
-        x, H, W = self.patch_embed4(x)
+        x, h, w = self.patch_embed4(x)
         for i, blk in enumerate(self.block4):
-            x = blk(x, H, W)
+            x = blk(x, h, w)
         x = self.norm4(x)
-        x = x.reshape(B, H, W, -1).permute(0, 3, 1, 2).contiguous()
+        x = x.reshape(b, h, w, -1).permute(0, 3, 1, 2).contiguous()
         outs.append(x)
 
         return outs
@@ -364,9 +363,9 @@ class DWConv(nn.Module):
         super(DWConv, self).__init__()
         self.dwconv = nn.Conv2d(dim, dim, 3, 1, 1, bias=True, groups=dim)
 
-    def forward(self, x, H, W):
-        B, N, C = x.shape
-        x = x.transpose(1, 2).view(B, C, H, W)
+    def forward(self, x, h, w):
+        b, n, c = x.shape
+        x = x.transpose(1, 2).view(b, c, h, w)
         x = self.dwconv(x)
         x = x.flatten(2).transpose(1, 2)
 
@@ -385,52 +384,54 @@ def _conv_filter(state_dict, patch_size=16):
 
 
 @register_model
-class pvt_v2_b0(PyramidVisionTransformerImpr):
+class PvtV2B0(PyramidVisionTransformerImpr):
     def __init__(self, **kwargs):
-        super(pvt_v2_b0, self).__init__(
+        super().__init__(
             patch_size=4, embed_dims=[32, 64, 160, 256], num_heads=[1, 2, 5, 8], mlp_ratios=[8, 8, 4, 4],
             qkv_bias=True, norm_layer=partial(nn.LayerNorm, eps=1e-6), depths=[2, 2, 2, 2], sr_ratios=[8, 4, 2, 1],
             drop_rate=0.0, drop_path_rate=0.1)
 
 
-
 @register_model
-class pvt_v2_b1(PyramidVisionTransformerImpr):
+class PvtV2B1(PyramidVisionTransformerImpr):
     def __init__(self, **kwargs):
-        super(pvt_v2_b1, self).__init__(
+        super().__init__(
             patch_size=4, embed_dims=[64, 128, 320, 512], num_heads=[1, 2, 5, 8], mlp_ratios=[8, 8, 4, 4],
             qkv_bias=True, norm_layer=partial(nn.LayerNorm, eps=1e-6), depths=[2, 2, 2, 2], sr_ratios=[8, 4, 2, 1],
             drop_rate=0.0, drop_path_rate=0.1)
 
-@register_model
-class pvt_v2_b2(PyramidVisionTransformerImpr):
-    def __init__(self, **kwargs):
-        super(pvt_v2_b2, self).__init__(
-            patch_size=4, embed_dims=[64, 128, 320, 512], num_heads=[1, 2, 5, 8], mlp_ratios=[8, 8, 4, 4],
-            qkv_bias=True, norm_layer=partial(nn.LayerNorm, eps=1e-6), depths=[3, 4, 6, 3], sr_ratios=[8, 4, 2, 1],
-            drop_rate=0.0, drop_path_rate=0.1)
 
 @register_model
-class pvt_v2_b3(PyramidVisionTransformerImpr):
+class PvtV2B2(PyramidVisionTransformerImpr):
     def __init__(self, **kwargs):
-        super(pvt_v2_b3, self).__init__(
+        super().__init__(
+            patch_size=4, embed_dims=[64, 128, 320, 512], num_heads=[1, 2, 5, 8], mlp_ratios=[8, 8, 4, 4],
+            qkv_bias=True, norm_layer=partial(nn.LayerNorm, eps=1e-6), depths=(3, 4, 6, 3), sr_ratios=(8, 4, 2, 1),
+            drop_rate=0.0, drop_path_rate=0.1)
+
+
+@register_model
+class PvtV2B3(PyramidVisionTransformerImpr):
+    def __init__(self, **kwargs):
+        super().__init__(
             patch_size=4, embed_dims=[64, 128, 320, 512], num_heads=[1, 2, 5, 8], mlp_ratios=[8, 8, 4, 4],
             qkv_bias=True, norm_layer=partial(nn.LayerNorm, eps=1e-6), depths=[3, 4, 18, 3], sr_ratios=[8, 4, 2, 1],
             drop_rate=0.0, drop_path_rate=0.1)
 
+
 @register_model
-class pvt_v2_b4(PyramidVisionTransformerImpr):
+class PvtV2B4(PyramidVisionTransformerImpr):
     def __init__(self, **kwargs):
-        super(pvt_v2_b4, self).__init__(
+        super().__init__(
             patch_size=4, embed_dims=[64, 128, 320, 512], num_heads=[1, 2, 5, 8], mlp_ratios=[8, 8, 4, 4],
             qkv_bias=True, norm_layer=partial(nn.LayerNorm, eps=1e-6), depths=[3, 8, 27, 3], sr_ratios=[8, 4, 2, 1],
             drop_rate=0.0, drop_path_rate=0.1)
 
 
 @register_model
-class pvt_v2_b5(PyramidVisionTransformerImpr):
+class PvtV2B5(PyramidVisionTransformerImpr):
     def __init__(self, **kwargs):
-        super(pvt_v2_b5, self).__init__(
+        super().__init__(
             patch_size=4, embed_dims=[64, 128, 320, 512], num_heads=[1, 2, 5, 8], mlp_ratios=[4, 4, 4, 4],
             qkv_bias=True, norm_layer=partial(nn.LayerNorm, eps=1e-6), depths=[3, 6, 40, 3], sr_ratios=[8, 4, 2, 1],
             drop_rate=0.0, drop_path_rate=0.1)

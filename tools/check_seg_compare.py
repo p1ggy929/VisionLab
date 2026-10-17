@@ -11,7 +11,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+    sys.path.append(str(ROOT))
 
 import cv2  # noqa: E402
 import numpy as np  # noqa: E402
@@ -19,7 +19,9 @@ import numpy as np  # noqa: E402
 from algorithms import registry  # noqa: E402
 from core import media  # noqa: E402
 from core.config import settings  # noqa: E402
-from core.logging_setup import setup_logging  # noqa: E402
+from core.logging_setup import get_cli_logger, setup_logging  # noqa: E402
+
+log = get_cli_logger("tools.check_seg_compare")
 
 DEFAULT_DATA = Path(r"E:\2Project\2026dachuang\Unet")
 PLAN = [
@@ -71,23 +73,23 @@ def main() -> int:
     if not image_path.exists():
         candidates = sorted(test_dir.glob("*.jpg")) if test_dir.exists() else []
         if not candidates:
-            print(f"找不到测试图像，请检查路径：{test_dir}")
+            log.info(f"找不到测试图像，请检查路径：{test_dir}")
             return 1
         image_path = candidates[0]
 
     image = media.read_image(image_path)
     if image is None:
-        print(f"图像读取失败：{image_path}")
+        log.info(f"图像读取失败：{image_path}")
         return 1
     gt = load_gt(masks_dir / (image_path.stem + ".png"))
-    print(f"测试图像: {image_path.name}  {image.shape[1]}x{image.shape[0]}")
+    log.info(f"测试图像: {image_path.name}  {image.shape[1]}x{image.shape[0]}")
     if gt is not None:
-        print(f"真值掩膜前景占比: {gt.mean():.4f}  shape={gt.shape}")
+        log.info(f"真值掩膜前景占比: {gt.mean():.4f}  shape={gt.shape}")
 
     panels = [image.copy()]
     labels = ["原图"]
     rows = []
-    print("=" * 92)
+    log.info("=" * 92)
     for arch, weight_name, label in PLAN:
         weight = weights_dir / weight_name
         plugin = registry.create("segmentation", arch)
@@ -103,7 +105,7 @@ def main() -> int:
         vis = media.draw_panel(vis, [f"掩膜占比 {ratio:.3f}"], "top-right", label)
         panels.append(vis)
         labels.append(label)
-        print("  ".join(f"{k}={v}" for k, v in row.items()))
+        log.info("  ".join(f"{k}={v}" for k, v in row.items()))
 
     h, w = image.shape[:2]
     scale = 620 / w
@@ -119,15 +121,15 @@ def main() -> int:
                                       "size": 22, "bg": (40, 40, 40), "padding": 6}])
     out_path = out_dir / "seg_model_comparison.jpg"
     media.write_image(out_path, grid, quality=92)
-    print("=" * 92)
-    print("对比图已保存:", out_path)
+    log.info("=" * 92)
+    log.info("对比图已保存:", out_path)
 
     header = ["模型", "掩膜占比"] + (["IoU", "Dice", "Precision", "Recall", "Accuracy"]
                                     if gt is not None else [])
-    print("\n| " + " | ".join(header) + " |")
-    print("|" + "---|" * len(header))
+    log.info("\n| " + " | ".join(header) + " |")
+    log.info("|" + "---|" * len(header))
     for row in rows:
-        print("| " + " | ".join(str(row.get(k, "-")) for k in header) + " |")
+        log.info("| " + " | ".join(str(row.get(k, "-")) for k in header) + " |")
     return 0
 
 

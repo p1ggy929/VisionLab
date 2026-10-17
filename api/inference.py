@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import time
 
 from flask import Blueprint, Response, request
 
@@ -16,6 +17,37 @@ from .common import (arg, arg_int, current_user, ok, page_args, paginated, paylo
                      require_perm)
 
 bp = Blueprint("inference", __name__, url_prefix="/api/v1")
+
+# 允许运行时热更新的流水线参数（与 PipelineService.configure 的形参保持一致）
+_PIPELINE_PARAM_KEYS = (
+    "sample_points", "kernel", "max_range_m", "road_split", "reproject",
+    "corridor_ref_depth_m", "threshold", "conf", "mode", "classes",
+)
+
+# 测距记录导出时支持的过滤字段
+_RECORD_FILTER_KEYS = (
+    "task_type", "strategy", "model_name", "category",
+    "size_group", "illumination", "experiment_id",
+)
+
+
+def _pipeline_updates(data: dict) -> dict:
+    """从请求体中挑出流水线可热更新的参数。"""
+    updates = {}
+    for key in _PIPELINE_PARAM_KEYS:
+        if key in data:
+            updates[key] = data[key]
+    return updates
+
+
+def _record_filters() -> dict:
+    """收集导出接口的查询过滤条件（空值不参与过滤）。"""
+    filters = {}
+    for key in _RECORD_FILTER_KEYS:
+        value = arg(key)
+        if value:
+            filters[key] = value
+    return filters
 
 
 # ================================================================== 流水线
@@ -101,19 +133,19 @@ def start_session():
         if not project_id:
             rows = project_service.list_projects(1, 1)["items"]
             if not rows:
-                project = project_service.create_project(
-                    "默认项目", "平台自动创建", scene="campus_road", app_target="sweeper")
+                project = project_service.create_project(project_service.ProjectSpec(
+                    "默认项目", "平台自动创建", scene="campus_road", app_target="sweeper"))
                 project_id = project["id"]
             else:
                 project_id = rows[0]["id"]
-        experiment = project_service.create_experiment(
+        experiment = project_service.create_experiment(project_service.ExperimentSpec(
             project_id=project_id,
             name=str(data.get("name", f"实时测距实验 {db.now_iso()}")),
             task_type=str(data.get("task_type", "joint")), kind="infer",
             model_id=data.get("model_id"), dataset_version_id=data.get("dataset_version_id"),
             calibration_id=data.get("calibration_id"),
             config_snapshot={"ranging": pipeline_service.get_pipeline().config},
-            created_by=(current_user() or {}).get("username"))
+            created_by=(current_user() or {}).get("username")))
         experiment_id = experiment["id"]
     project_id = data.get("project_id") or (
         project_service.get_experiment(experiment_id) or {}).get("project_id")
@@ -192,10 +224,7 @@ def ranging_preview():
     """用当前参数对当前帧试算，不落库。"""
     data = payload()
     pipeline = pipeline_service.get_pipeline()
-    pipeline.configure(**{k: data[k] for k in
-                          ("sample_points", "kernel", "max_range_m", "road_split",
-                           "reproject", "corridor_ref_depth_m", "threshold",
-                           "conf", "mode", "classes") if k in data})
+    pipeline.configure(**_pipeline_updates(data))
     bundle, truth = pipeline_service.current_frame_bundle()
     if bundle is None:
         raise ValidationError("没有可用画面。")
@@ -244,7 +273,7 @@ def create_record():
     if not result:
         raise ValidationError("缺少测距结果数据（可传 ranging 或 use_last=true）。")
 
-    record = pipeline.record_measurement(
+    record = pipeline.record_measurement(pipeline_service.MeasurementRecord(
         target_kind=str(data.get("target_kind", "object")),
         metric_kind=str(data.get("metric_kind", "min")),
         result=result,
@@ -254,7 +283,7 @@ def create_record():
         notes=str(data.get("notes", "")),
         illumination=data.get("illumination"),
         media_uri=data.get("media_uri"),
-    )
+    ))
     return ok(record)
 
 
@@ -280,21 +309,21 @@ def bulk_create_records():
                 continue
             category = item["category"]
             actual = actual_map.get(category)
-            created.append(pipeline.record_measurement(
+            created.append(pipeline.record_measurement(pipeline_service.MeasurementRecord(
                 target_kind="object", metric_kind=metric, result=result,
                 actual_value=actual, category=category,
                 illumination=data.get("illumination"),
-                actual_source=str(data.get("actual_source", "tape"))))
+                actual_source=str(data.get("actual_source", "tape")))))
     for side in ("left", "right", "center"):
         for metric in ("min", "max"):
             result = (last.get("road", {}).get(side, {}) or {}).get(metric)
             if not result:
                 continue
-            created.append(pipeline.record_measurement(
+            created.append(pipeline.record_measurement(pipeline_service.MeasurementRecord(
                 target_kind=f"road_{side}" if side != "center" else "road_center",
                 metric_kind=metric, result=result,
                 actual_value=actual_map.get(f"road_{side}"),
-                illumination=data.get("illumination")))
+                illumination=data.get("illumination"))))
     return ok({"created": len(created), "records": created[:50]})
 
 
@@ -316,9 +345,7 @@ def delete_record(record_id: str):
 def export_records():
     import csv
 
-    filters = {k: arg(k) for k in ("task_type", "strategy", "model_name", "category",
-                                   "size_group", "illumination", "experiment_id")}
-    rows = analysis_service._fetch_all({k: v for k, v in filters.items() if v})  # noqa: SLF001
+    rows = analysis_service.fetch_all(_record_filters())
     buffer = io.StringIO()
     fieldnames = ["id", "task_type", "strategy", "target_kind", "metric_kind", "model_name",
                   "category", "size_group", "depth_m", "lateral_m", "euclidean_m",
@@ -374,7 +401,7 @@ def inference_frame():
         depth = np.zeros((h, w), dtype="float32")
     bundle = FrameBundle(color=image, depth_m=depth,
                          depth_raw=(depth / 0.001).astype("uint16"), depth_scale=0.001,
-                         timestamp=__import__("time").time(),
+                         timestamp=time.time(),
                          intrinsics=estimate_intrinsics_from_fov(w, h),
                          frame_number=0, serial="upload", source="upload")
     result = pipeline.process(bundle, None)

@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 
 import cv2
@@ -27,6 +28,25 @@ COLOR_RIGHT = (200, 0, 255)    # 右边界：品红
 COLOR_TEXT = (255, 255, 255)
 COLOR_TITLE = (0, 220, 255)
 COLOR_WARN = (0, 200, 255)
+
+
+@dataclass(frozen=True)
+class TextStyle:
+    """单行文字的绘制样式（颜色 / 字号 / 线宽）。"""
+
+    color: tuple[int, int, int] = COLOR_TEXT
+    scale: float = 0.5
+    thickness: int = 1
+
+
+@dataclass(frozen=True)
+class HudStyle:
+    """HUD 多行信息面板的样式（行高 / 颜色 / 字号）。"""
+
+    line_height: int = 26
+    color: tuple[int, int, int] = COLOR_TEXT
+    size: int = 16
+
 
 _FONT_CANDIDATES = (
     "msyh.ttc", "msyhbd.ttc", "simhei.ttf", "simsun.ttc", "Deng.ttf",
@@ -104,12 +124,12 @@ def draw_text_items(image: np.ndarray, items: list[dict]) -> np.ndarray:
     return cv2.cvtColor(np.asarray(pil), cv2.COLOR_RGB2BGR)
 
 
-def put_label(image: np.ndarray, text: str, org: tuple[int, int], color=COLOR_TEXT,
-              scale: float = 0.5, thickness: int = 1) -> None:
+def put_label(image: np.ndarray, text: str, org: tuple[int, int],
+              style: TextStyle = TextStyle()) -> None:
     """兼容旧调用：单行文字。"""
-    size = int(round(max(11.0, float(scale) * 28.0)))
-    draw_text_items(image, [{"text": text, "xy": (int(org[0]), int(org[1]) - size), "color": color,
-                             "size": size}])
+    size = int(round(max(11.0, float(style.scale) * 28.0)))
+    draw_text_items(image, [{"text": text, "xy": (int(org[0]), int(org[1]) - size),
+                             "color": style.color, "size": size}])
 
 
 # ------------------------------------------------------------------ 基础 IO
@@ -273,9 +293,9 @@ def draw_ranging_points(image: np.ndarray, result: dict) -> np.ndarray:
 
 
 def draw_hud(image: np.ndarray, lines: list[str], origin: tuple[int, int] = (12, 10),
-             line_height: int = 26, color=COLOR_TEXT, size: int = 16) -> np.ndarray:
-    items = [{"text": line, "xy": (int(origin[0]), int(origin[1]) + i * line_height),
-              "color": color, "size": size} for i, line in enumerate(lines)]
+             style: HudStyle = HudStyle()) -> np.ndarray:
+    items = [{"text": line, "xy": (int(origin[0]), int(origin[1]) + i * style.line_height),
+              "color": style.color, "size": style.size} for i, line in enumerate(lines)]
     return draw_text_items(image, items)
 
 

@@ -1,4 +1,8 @@
-"""UNet（移植自项目 B `Unet/Unet.py`，保持层命名以匹配既有权重）。"""
+"""UNet（移植自项目 B `Unet/Unet.py`）。
+
+层名使用 snake_case；加载旧版权重时由
+`algorithms.segmentation.weight_compat` 负责键名映射。
+"""
 
 from __future__ import annotations
 
@@ -16,25 +20,25 @@ class UNet(nn.Module):
         self.bilinear = bilinear
 
         self.inc = nd.DoubleConv(n_channels, 32)
-        self.Down1 = nd.Down(32, 64)
-        self.Down2 = nd.Down(64, 128)
-        self.Down3 = nd.Down(128, 256)
-        self.Down4 = nd.Down(256, 256)
-        self.Up1 = nd.Up(512, 128, bilinear)
-        self.Up2 = nd.Up(256, 64, bilinear)
-        self.Up3 = nd.Up(128, 32, bilinear)
-        self.Up4 = nd.Up(64, 32, bilinear)
+        self.down1 = nd.Down(32, 64)
+        self.down2 = nd.Down(64, 128)
+        self.down3 = nd.Down(128, 256)
+        self.down4 = nd.Down(256, 256)
+        self.up1 = nd.Up(512, 128, bilinear)
+        self.up2 = nd.Up(256, 64, bilinear)
+        self.up3 = nd.Up(128, 32, bilinear)
+        self.up4 = nd.Up(64, 32, bilinear)
         self.outc = nd.OutConv(32, n_classes)
         self.out = torch.sigmoid
 
     def forward(self, x):
         x1 = self.inc(x)
-        x2 = self.Down1(x1)
-        x3 = self.Down2(x2)
-        x4 = self.Down3(x3)
-        x5 = self.Down4(x4)
-        x = self.Up1(x5, x4)
-        x = self.Up2(x, x3)
-        x = self.Up3(x, x2)
-        x = self.Up4(x, x1)
+        x2 = self.down1(x1)
+        x3 = self.down2(x2)
+        x4 = self.down3(x3)
+        x5 = self.down4(x4)
+        x = self.up1(x5, x4)
+        x = self.up2(x, x3)
+        x = self.up3(x, x2)
+        x = self.up4(x, x1)
         return self.out(self.outc(x))

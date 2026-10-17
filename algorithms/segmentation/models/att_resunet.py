@@ -7,7 +7,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from . import blocks as nd
-from .blocks import Attention_block, Attexpansive_block, expansive_block, final_block
+from .blocks import AttentionBlock, AttExpansiveBlock, ExpansiveBlock, final_block
 
 double_conv = nd.contracting_block
 
@@ -37,19 +37,19 @@ class AttResUNet(nn.Module):
             nn.MaxPool2d(kernel_size=(2, 2), stride=2),
         )
 
-        self.conv_decode4 = Attexpansive_block(1024, 512)
-        self.att4 = Attention_block(512, 512, 256)
+        self.conv_decode4 = AttExpansiveBlock(1024, 512)
+        self.att4 = AttentionBlock(512, 512, 256)
         self.double_conv4 = double_conv(1024, 512)
-        self.conv_decode3 = Attexpansive_block(512, 256)
-        self.att3 = Attention_block(F_g=256, F_l=256, F_int=128)
+        self.conv_decode3 = AttExpansiveBlock(512, 256)
+        self.att3 = AttentionBlock(f_g=256, f_l=256, f_int=128)
         self.double_conv3 = double_conv(512, 256)
-        self.conv_decode2 = Attexpansive_block(256, 128)
-        self.att2 = Attention_block(F_g=128, F_l=128, F_int=64)
+        self.conv_decode2 = AttExpansiveBlock(256, 128)
+        self.att2 = AttentionBlock(f_g=128, f_l=128, f_int=64)
         self.double_conv2 = double_conv(256, 128)
-        self.conv_decode1 = Attexpansive_block(128, 64)
-        self.att1 = Attention_block(F_g=64, F_l=64, F_int=32)
+        self.conv_decode1 = AttExpansiveBlock(128, 64)
+        self.att1 = AttentionBlock(f_g=64, f_l=64, f_int=32)
         self.double_conv1 = double_conv(128, 64)
-        self.conv_decode0 = expansive_block(64, 32, 32)
+        self.conv_decode0 = ExpansiveBlock(64, 32, 32)
 
         self.final_layer = final_block(32, out_channel)
         self.out = torch.sigmoid

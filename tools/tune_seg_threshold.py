@@ -13,14 +13,16 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+    sys.path.append(str(ROOT))
 
 import cv2  # noqa: E402
 import numpy as np  # noqa: E402
 
 from algorithms import registry  # noqa: E402
 from core import media  # noqa: E402
-from core.logging_setup import setup_logging  # noqa: E402
+from core.logging_setup import get_cli_logger, setup_logging  # noqa: E402
+
+log = get_cli_logger("tools.tune_seg_threshold")
 
 DEFAULT_DATA = Path(r"E:\2Project\2026dachuang\Unet")
 PLAN = [("unet", "Unet_1000_best.pth"), ("resunet", "resunet_1000_best.pth"),
@@ -47,9 +49,9 @@ def main() -> int:
     test_images = sorted((data_root / "dataset" / "test" / "images").glob("*.jpg"))[:6]
     masks_dir = data_root / "dataset" / "test" / "masks"
     if not test_images:
-        print("找不到测试图像。")
+        log.info("找不到测试图像。")
         return 1
-    print(f"抽检 {len(test_images)} 张测试图\n")
+    log.info(f"抽检 {len(test_images)} 张测试图\n")
 
     verdicts = {}
     for arch, weight in PLAN:
@@ -74,16 +76,16 @@ def main() -> int:
         verdicts[arch] = {"best_threshold": best[0], "best_iou": round(best[1], 4),
                           "closest_threshold": closest[0], "iou_at_closest": round(closest[1], 4),
                           "reported_iou": reference}
-        print(f"== {arch} ==")
-        print("   " + "  ".join(f"t={t:.2f}:{v:.4f}" for t, v in scores))
-        print(f"   最佳阈值 {best[0]:.2f} -> IoU {best[1]:.4f}；"
+        log.info(f"== {arch} ==")
+        log.info("   " + "  ".join(f"t={t:.2f}:{v:.4f}" for t, v in scores))
+        log.info(f"   最佳阈值 {best[0]:.2f} -> IoU {best[1]:.4f}；"
               f"最接近原项目 B 报告值({reference})的阈值 {closest[0]:.2f} -> IoU {closest[1]:.4f}\n")
 
-    print("=" * 84)
-    print("结论：各结构最优阈值并不相同，平台界面提供阈值滑块以便按结构调优")
-    print("=" * 84)
+    log.info("=" * 84)
+    log.info("结论：各结构最优阈值并不相同，平台界面提供阈值滑块以便按结构调优")
+    log.info("=" * 84)
     for arch, value in verdicts.items():
-        print(f"  {arch:<12} 原报告 IoU={value['reported_iou']}  "
+        log.info(f"  {arch:<12} 原报告 IoU={value['reported_iou']}  "
               f"最接近阈值={value['closest_threshold']}  实测 IoU={value['iou_at_closest']}  "
               f"(最优 {value['best_iou']} @ t={value['best_threshold']})")
     return 0

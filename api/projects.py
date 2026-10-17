@@ -25,14 +25,15 @@ def list_projects():
 def create_project():
     data = payload()
     user = current_user()
-    project = project_service.create_project(
+    project = project_service.create_project(project_service.ProjectSpec(
         name=str(data.get("name", "")), description=str(data.get("description", "")),
         scene=str(data.get("scene", "campus_road")),
         app_target=str(data.get("app_target", "sweeper")),
-        owner_id=user["id"] if user else None, config=data.get("config"))
-    auth_service.audit(user["id"] if user else None, user["username"] if user else None,
-                       "project.create", "project", project.get("id"), "success",
-                       request.remote_addr or "")
+        owner_id=user["id"] if user else None, config=data.get("config")))
+    auth_service.audit(auth_service.AuditEvent(
+        user["id"] if user else None, user["username"] if user else None,
+        "project.create", "project", project.get("id"), "success",
+        request.remote_addr or ""))
     return ok(project)
 
 
@@ -84,9 +85,10 @@ def add_member(project_id: str):
 @bp.get("/experiments")
 def list_experiments():
     page, size = page_args()
-    return paginated(project_service.list_experiments(
-        page, size, project_id=arg("project_id"), task_type=arg("task_type"),
-        status=arg("status"), kind=arg("kind")))
+    query = project_service.ExperimentQuery(
+        project_id=arg("project_id"), task_type=arg("task_type"),
+        status=arg("status"), kind=arg("kind"))
+    return paginated(project_service.list_experiments(page, size, query))
 
 
 @bp.post("/experiments")
@@ -94,14 +96,14 @@ def list_experiments():
 def create_experiment():
     data = payload()
     user = current_user()
-    experiment = project_service.create_experiment(
+    experiment = project_service.create_experiment(project_service.ExperimentSpec(
         project_id=str(data.get("project_id", "")), name=str(data.get("name", "")),
         task_type=str(data.get("task_type", "detection")),
         kind=str(data.get("kind", "infer")),
         dataset_version_id=data.get("dataset_version_id"), model_id=data.get("model_id"),
         calibration_id=data.get("calibration_id"), camera_id=data.get("camera_id"),
         config_snapshot=data.get("config_snapshot"),
-        created_by=user["username"] if user else None)
+        created_by=user["username"] if user else None))
     return ok(experiment)
 
 

@@ -30,7 +30,8 @@ class MaskBoundaryStrategy:
         self.sampler = sampler or DepthSampler()
 
     # ------------------------------------------------------------------
-    def _largest_contour(self, mask: np.ndarray | None):
+    @staticmethod
+    def _largest_contour(mask: np.ndarray | None):
         if mask is None:
             return None, None
         binary = (np.asarray(mask) > 0).astype(np.uint8)
@@ -112,7 +113,7 @@ class MaskBoundaryStrategy:
         cx, cy = int(centroid[0]), int(centroid[1])
         cy = int(np.clip(cy, 0, depth_m.shape[0] - 1))
         cx = int(np.clip(cx, 0, depth_m.shape[1] - 1))
-        centroid_value = self.sampler._patch_value(depth_m, cx, cy)  # noqa: SLF001 - 同包内复用
+        centroid_value = self.sampler.patch_value(depth_m, cx, cy)  # noqa: SLF001 - 同包内复用
         if centroid_value is not None:
             lat = self._laterals([cx], [centroid_value], intr, do_reproject)
             center_results = summarize_points(

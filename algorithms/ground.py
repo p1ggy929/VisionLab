@@ -10,7 +10,19 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import numpy as np
+
+
+@dataclass(frozen=True)
+class GroundTolerance:
+    """贴合地面判定的容差与有效量程（米）。"""
+
+    tol_abs: float = 0.20
+    tol_rel: float = 0.10
+    min_m: float = 0.3
+    max_m: float = 20.0
 
 
 class GroundPlane:
@@ -86,15 +98,15 @@ def closer_than_ground_mask(depth_m: np.ndarray, plane: GroundPlane, ratio: floa
     return mask.astype(np.uint8)
 
 
-def on_ground_mask(depth_m: np.ndarray, plane: GroundPlane, tol_abs: float = 0.20,
-                   tol_rel: float = 0.10, min_m: float = 0.3, max_m: float = 20.0) -> np.ndarray:
+def on_ground_mask(depth_m: np.ndarray, plane: GroundPlane,
+                   tolerance: GroundTolerance = GroundTolerance()) -> np.ndarray:
     """返回"贴合地面"的二值掩膜（候选可通行区域）。"""
     h, w = depth_m.shape[:2]
     if not plane.valid:
         return np.zeros((h, w), dtype=np.uint8)
     expected = plane.expected_map(h, w)
-    valid = (depth_m >= min_m) & (depth_m <= max_m)
-    tol = np.maximum(tol_abs, tol_rel * expected)
+    valid = (depth_m >= tolerance.min_m) & (depth_m <= tolerance.max_m)
+    tol = np.maximum(tolerance.tol_abs, tolerance.tol_rel * expected)
     rows = np.arange(h, dtype=np.float32).reshape(-1, 1)
     below_horizon = rows > plane.horizon_v
     mask = valid & (np.abs(depth_m - expected) <= tol) & below_horizon

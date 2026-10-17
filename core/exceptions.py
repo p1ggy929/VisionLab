@@ -62,7 +62,7 @@ class AuthError(VisionLabError):
     http_status = 401
 
 
-class PermissionError_(VisionLabError):
+class PermissionDeniedError(VisionLabError):
     code = 40300
     http_status = 403
 

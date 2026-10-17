@@ -20,7 +20,7 @@ from core.config import settings
 from core.exceptions import ModelError
 from core.logging_setup import get_logger
 from ..base import BasePlugin, Prediction
-from ..ground import estimate_ground_plane, on_ground_mask
+from ..ground import GroundTolerance, estimate_ground_plane, on_ground_mask
 from ..registry import register_plugin
 
 log = get_logger("algorithms.classical_seg")
@@ -65,8 +65,10 @@ class ClassicalRoadSegmenter(BasePlugin):
             if depth_m.shape[:2] != (h, w):
                 depth_m = cv2.resize(depth_m, (w, h), interpolation=cv2.INTER_NEAREST)
             plane = estimate_ground_plane(depth_m, min_m=min_m, max_m=max_m)
-            ground = on_ground_mask(depth_m, plane, tol_abs=self.ground_tol_abs,
-                                    tol_rel=self.ground_tol_rel, min_m=min_m, max_m=max_m)
+            tolerance = GroundTolerance(tol_abs=self.ground_tol_abs,
+                                        tol_rel=self.ground_tol_rel,
+                                        min_m=min_m, max_m=max_m)
+            ground = on_ground_mask(depth_m, plane, tolerance)
         else:
             plane = None
             ground = np.ones((h, w), dtype=np.uint8)

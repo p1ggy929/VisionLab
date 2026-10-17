@@ -22,6 +22,7 @@ from core.logging_setup import get_logger
 from core.storage import to_path
 from ..base import BasePlugin, Prediction
 from ..registry import register_plugin
+from .weight_compat import remap_legacy_state_dict
 
 log = get_logger("algorithms.segmenter")
 
@@ -75,6 +76,8 @@ class UNetSegmenterAdapter(BasePlugin):
                 raise ModelError(f"权重加载失败 {path.name}: {exc}") from exc
             if isinstance(state, dict) and "model_state_dict" in state:
                 state = state["model_state_dict"]
+            # 旧版权重使用 CamelCase 层名，这里统一映射到当前的 snake_case 键名
+            state = remap_legacy_state_dict(state)
             try:
                 model.load_state_dict(state)
             except Exception as exc:  # noqa: BLE001

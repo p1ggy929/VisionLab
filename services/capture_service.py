@@ -7,6 +7,8 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import json
 from pathlib import Path
 from typing import Any
@@ -119,10 +121,26 @@ def snapshot(session_id: str, illumination: str | None = None,
     return item
 
 
-def set_truth(session_id: str, stamp: str, actual_distance_m: float | None = None,
-              actual_min_m: float | None = None, actual_max_m: float | None = None,
-              actual_source: str = "tape", category: str | None = None,
-              illumination: str | None = None, notes: str = "") -> dict:
+@dataclass(frozen=True)
+class TruthEntry:
+    """一次抓拍记录的真值标注。"""
+
+    stamp: str
+    actual_distance_m: float | None = None
+    actual_min_m: float | None = None
+    actual_max_m: float | None = None
+    actual_source: str = "tape"
+    category: str | None = None
+    illumination: str | None = None
+    notes: str = ""
+
+
+def set_truth(session_id: str, entry: TruthEntry) -> dict:
+    stamp = entry.stamp
+    actual_distance_m = entry.actual_distance_m
+    actual_min_m, actual_max_m = entry.actual_min_m, entry.actual_max_m
+    actual_source, category = entry.actual_source, entry.category
+    illumination, notes = entry.illumination, entry.notes
     session = get_capture_session(session_id)
     root = Path(storage.to_path(session["root"]) or "")
     for item in session.get("items", []):
@@ -349,7 +367,7 @@ def depth_probe(x: int | None = None, y: int | None = None) -> dict:
     patch = bundle.depth_m[max(0, py - 5):py + 6, max(0, px - 5):px + 6]
     valid = patch[patch > 0]
     depth = float(np.median(valid)) if valid.size else 0.0
-    X, Y, Z = deproject(px, py, depth, bundle.intrinsics)
+    x_m, y_m, z_m = deproject(px, py, depth, bundle.intrinsics)
     return {"u": px, "v": py, "depth_m": round(depth, 4),
-            "x_m": round(X, 4), "y_m": round(Y, 4), "z_m": round(Z, 4),
+            "x_m": round(x_m, 4), "y_m": round(y_m, 4), "z_m": round(z_m, 4),
             "valid_points": int(valid.size), "total_points": int(patch.size)}

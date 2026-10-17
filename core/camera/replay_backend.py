@@ -122,6 +122,13 @@ class ReplayBackend(CameraBackend):
             })
         log.info("回放源已装载: %s（%d 帧）", self.source_label, len(self._pairs))
 
+    @staticmethod
+    def _both_files_exist(rgb: str | None, depth: str | None) -> bool:
+        """判断 RGB 与深度图路径是否都可用（任一路径缺失即视为不可用）。"""
+        if not rgb or not depth:
+            return False
+        return Path(rgb).exists() and Path(depth).exists()
+
     def _load_from_dataset(self, version_id: str) -> None:
         from core import db
 
@@ -137,7 +144,7 @@ class ReplayBackend(CameraBackend):
         for row in rows:
             rgb = to_path(row["uri"])
             depth = to_path(row["depth_uri"])
-            if not rgb or not depth or not Path(rgb).exists() or not Path(depth).exists():
+            if not self._both_files_exist(rgb, depth):
                 continue
             pairs.append({"rgb": Path(rgb), "depth": Path(depth), "stamp": Path(rgb).stem})
             meta = row.get("meta")
@@ -355,13 +362,13 @@ def capture_sample(source_id: str, limit: int = 40, with_truth: bool = True) -> 
             if truth:
                 nearest = min(truth, key=lambda t: float(t.get("world_z") or 1e9))
                 try:
-                    capture_service.set_truth(
-                        session["id"], item["stamp"],
+                    capture_service.set_truth(session["id"], capture_service.TruthEntry(
+                        stamp=item["stamp"],
                         actual_distance_m=float(nearest["world_z"]),
                         actual_source="manual",
                         category=nearest.get("category"),
                         notes=f"由 {bundle.source} 后端在抓帧时同步记录的仿真真值",
-                        illumination="sunny")
+                        illumination="sunny"))
                     with_truth_count += 1
                 except Exception as exc:  # noqa: BLE001
                     log.warning("写入真值失败: %s", exc)

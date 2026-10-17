@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import random
 import shutil
 from collections import Counter
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -22,10 +24,25 @@ TASK_TYPES = ("detection", "segmentation")
 
 
 # ================================================================== 数据集
-def create_dataset(name: str, task_type: str, project_id: str | None = None,
-                   scene: str = "campus_road", class_names: list[str] | None = None,
-                   foreground_values: list[int] | None = None,
-                   description: str = "", created_by: str | None = None) -> dict:
+@dataclass(frozen=True)
+class DatasetSpec:
+    """新建数据集的描述信息。"""
+
+    name: str
+    task_type: str
+    project_id: str | None = None
+    scene: str = "campus_road"
+    class_names: list[str] | None = None
+    foreground_values: list[int] | None = None
+    description: str = ""
+    created_by: str | None = None
+
+
+def create_dataset(spec: DatasetSpec) -> dict:
+    name, task_type = spec.name, spec.task_type
+    project_id, scene = spec.project_id, spec.scene
+    class_names, foreground_values = spec.class_names, spec.foreground_values
+    description, created_by = spec.description, spec.created_by
     name = str(name).strip()
     if not name:
         raise ValidationError("数据集名称不能为空。")
@@ -92,9 +109,22 @@ def list_versions(dataset_id: str) -> list[dict]:
 
 
 # ================================================================== 版本
-def create_version(dataset_id: str, version: str, source_root: str,
-                   split_ratio: str = "7:2:1", split_seed: int = 42,
-                   limit: int | None = None) -> dict:
+@dataclass(frozen=True)
+class VersionSpec:
+    """数据集版本：来源目录、划分比例与样本上限。"""
+
+    dataset_id: str
+    version: str
+    source_root: str
+    split_ratio: str = "7:2:1"
+    split_seed: int = 42
+    limit: int | None = None
+
+
+def create_version(spec: VersionSpec) -> dict:
+    dataset_id, version = spec.dataset_id, spec.version
+    source_root, split_ratio = spec.source_root, spec.split_ratio
+    split_seed, limit = spec.split_seed, spec.limit
     dataset = get_dataset(dataset_id)
     if dataset is None:
         raise NotFoundError("数据集不存在。")
@@ -162,7 +192,7 @@ def scan_images(version_id: str, root: Path, mask_dir: Path | None = None,
         "uri": r["uri"], "mask_uri": r["mask_uri"], "sha256": None,
         "width": None, "height": None, "split": "train", "source": "import",
         "capture_session_id": None, "illum": None, "target_size_group": None,
-        "meta": __import__("json").dumps(r["meta"], ensure_ascii=False),
+        "meta": json.dumps(r["meta"], ensure_ascii=False),
         "created_at": stamp,
     } for r in rows]
     with db.transaction() as conn:
@@ -342,7 +372,6 @@ def split_version(version_id: str, ratio: str = "7:2:1", seed: int = 42) -> dict
     out_dir = settings.storage_dir("datasets") / version_id
     out_dir.mkdir(parents=True, exist_ok=True)
     manifest_path = out_dir / "split.json"
-    import json
 
     manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
     db.update("dataset_version", version_id, {
@@ -379,8 +408,6 @@ def version_stats(version_id: str, sample_limit: int = 300) -> dict:
     for row in samples:
         ann = db.query_one("SELECT payload FROM annotation WHERE image_id=? LIMIT 1", (row["id"],))
         if ann:
-            import json
-
             try:
                 payload = json.loads(ann["payload"]) if isinstance(ann["payload"], str) else ann["payload"]
             except Exception:  # noqa: BLE001
@@ -435,7 +462,6 @@ def version_diff(from_version: str, to_version: str, limit: int = 200) -> dict:
 def import_annotations(version_id: str, source_dir: str, fmt: str = "yolo",
                        class_names: list[str] | None = None) -> dict:
     """导入标注。支持 yolo(txt) / labelme(json) / coco(json) / voc(xml) / mask(png)。"""
-    import json
 
     src = Path(source_dir)
     if not src.exists():
@@ -552,8 +578,6 @@ def _translate_class(raw: str) -> str:
 
 
 def _parse_labelme(path: Path) -> list[dict]:
-    import json
-
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except Exception:  # noqa: BLE001
@@ -635,7 +659,7 @@ def import_legacy_detection_dataset(source_dir: str, dataset_name: str = "road-t
 
     dataset = _ensure_dataset(dataset_name, "detection", f"来自原项目 A 的 {images_dir}")
     version = f"v{len(list_versions(dataset['id'])) + 1}.0"
-    created = create_version(dataset["id"], version, str(images_dir), limit=limit)
+    created = create_version(VersionSpec(dataset["id"], version, str(images_dir), limit=limit))
     version_id = created["version_id"]
 
     imported, use_fmt = 0, None
@@ -673,7 +697,7 @@ def _ensure_dataset(name: str, task_type: str, description: str = "",
     existing = db.query_one("SELECT * FROM dataset WHERE name=? AND is_deleted=0", (name,))
     if existing:
         return db.decode_row(existing)
-    return create_dataset(name, task_type, scene=scene, description=description)
+    return create_dataset(DatasetSpec(name, task_type, scene=scene, description=description))
 
 
 def _guess_category_from_name(stem: str) -> str | None:
@@ -696,7 +720,7 @@ def import_legacy_segmentation_dataset(images_dir: str, masks_dir: str,
     dataset = _ensure_dataset(dataset_name, "segmentation",
                               "来自原项目 B 的校园道路分割数据集", scene="campus_road")
     version = f"v{len(list_versions(dataset['id'])) + 1}.0"
-    created = create_version(dataset["id"], version, str(images_path))
+    created = create_version(VersionSpec(dataset["id"], version, str(images_path)))
     version_id = created["version_id"]
     masked = 0
     if masks_path.exists():
@@ -779,7 +803,7 @@ def import_legacy_segmentation_full(data_root: str, dataset_name: str = "campus-
             "sha256": None, "width": None, "height": None, "split": split,
             "source": "legacy_project_b", "capture_session_id": None, "illum": "sunny",
             "target_size_group": None,
-            "meta": __import__("json").dumps({"size_bytes": stat.st_size,
+            "meta": json.dumps({"size_bytes": stat.st_size,
                                               "orig_split": split}, ensure_ascii=False),
             "created_at": stamp,
         })
@@ -802,7 +826,6 @@ def import_legacy_segmentation_full(data_root: str, dataset_name: str = "campus-
     out_dir = settings.storage_dir("datasets") / version_id
     out_dir.mkdir(parents=True, exist_ok=True)
     manifest_path = out_dir / "split.json"
-    import json
 
     manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
     db.update("dataset_version", version_id, {"split_manifest_uri": storage.to_uri(manifest_path)})
@@ -858,7 +881,7 @@ def import_legacy_detection_full(images_root: str, labels_root: str | None = Non
             "uri": storage.to_uri(path), "mask_uri": None, "sha256": None,
             "width": None, "height": None, "split": split, "source": "legacy_project_a",
             "capture_session_id": None, "illum": "sunny", "target_size_group": None,
-            "meta": __import__("json").dumps({"size_bytes": stat.st_size,
+            "meta": json.dumps({"size_bytes": stat.st_size,
                                               "orig_split": split}, ensure_ascii=False),
             "created_at": stamp,
         })
@@ -884,7 +907,6 @@ def import_legacy_detection_full(images_root: str, labels_root: str | None = Non
     out_dir = settings.storage_dir("datasets") / version_id
     out_dir.mkdir(parents=True, exist_ok=True)
     manifest_path = out_dir / "split.json"
-    import json
 
     manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
     db.update("dataset_version", version_id, {"split_manifest_uri": storage.to_uri(manifest_path)})

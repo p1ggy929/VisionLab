@@ -44,9 +44,9 @@ def _import_pvtv2():
         except Exception as exc:  # noqa: BLE001
             raise ModelError(f"timm 版本不兼容，无法导入 PVTv2 依赖: {exc}") from exc
 
-    from ..backbones.pvtv2 import pvt_v2_b2
+    from ..backbones.pvtv2 import PvtV2B2
 
-    return pvt_v2_b2
+    return PvtV2B2
 
 
 class ChannelAttention(nn.Module):
@@ -68,7 +68,8 @@ class ChannelAttention(nn.Module):
 class SpatialAttention(nn.Module):
     def __init__(self, kernel_size=7):
         super().__init__()
-        assert kernel_size in (3, 7), "kernel size must be 3 or 7"
+        if kernel_size not in (3, 7):
+            raise ValueError("kernel size must be 3 or 7")
         padding = 3 if kernel_size == 7 else 1
         self.conv1 = nn.Conv2d(2, 1, kernel_size, padding=padding, bias=False)
         self.sigmoid = nn.Sigmoid()
@@ -95,8 +96,8 @@ class BasicConv2d(nn.Module):
 class Encoder(nn.Module):
     def __init__(self, pretrain_path):
         super().__init__()
-        pvt_v2_b2 = _import_pvtv2()
-        self.backbone = pvt_v2_b2()
+        backbone_cls = _import_pvtv2()
+        self.backbone = backbone_cls()
         if pretrain_path is None:
             warnings.warn("please provide the pretrained pvt model. Not using pretrained model.")
         elif not os.path.isfile(pretrain_path):
@@ -149,10 +150,10 @@ class UNetV2(nn.Module):
         self.ca_4 = ChannelAttention(512)
         self.sa_4 = SpatialAttention()
 
-        self.Translayer_1 = BasicConv2d(64, channel, 1)
-        self.Translayer_2 = BasicConv2d(128, channel, 1)
-        self.Translayer_3 = BasicConv2d(320, channel, 1)
-        self.Translayer_4 = BasicConv2d(512, channel, 1)
+        self.translayer_1 = BasicConv2d(64, channel, 1)
+        self.translayer_2 = BasicConv2d(128, channel, 1)
+        self.translayer_3 = BasicConv2d(320, channel, 1)
+        self.translayer_4 = BasicConv2d(512, channel, 1)
 
         self.sdi_1 = SDI(channel)
         self.sdi_2 = SDI(channel)
@@ -172,13 +173,13 @@ class UNetV2(nn.Module):
 
         # 严格保持项目 B 原始前向顺序：先通道注意力再空间注意力
         f1 = self.ca_1(f1) * f1
-        f1 = self.Translayer_1(self.sa_1(f1) * f1)
+        f1 = self.translayer_1(self.sa_1(f1) * f1)
         f2 = self.ca_2(f2) * f2
-        f2 = self.Translayer_2(self.sa_2(f2) * f2)
+        f2 = self.translayer_2(self.sa_2(f2) * f2)
         f3 = self.ca_3(f3) * f3
-        f3 = self.Translayer_3(self.sa_3(f3) * f3)
+        f3 = self.translayer_3(self.sa_3(f3) * f3)
         f4 = self.ca_4(f4) * f4
-        f4 = self.Translayer_4(self.sa_4(f4) * f4)
+        f4 = self.translayer_4(self.sa_4(f4) * f4)
 
         f41 = self.sdi_4([f1, f2, f3, f4], f4)
         f31 = self.sdi_3([f1, f2, f3, f4], f3)
@@ -193,8 +194,8 @@ class UNetV2(nn.Module):
         y = self.deconv4(y) + f11
         seg_outs.append(self.seg_outs[3](y))
 
-        for i, o in enumerate(seg_outs):
-            seg_outs[i] = F.interpolate(o, scale_factor=4, mode="bilinear")
+        for index, feature in enumerate(seg_outs):
+            seg_outs[index] = F.interpolate(feature, scale_factor=4, mode="bilinear")
 
         if self.deep_supervision:
             return seg_outs[::-1]

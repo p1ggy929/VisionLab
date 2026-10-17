@@ -15,14 +15,17 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+    sys.path.append(str(ROOT))
 
 from core.config import settings  # noqa: E402
+from core.logging_setup import get_cli_logger  # noqa: E402
+
+log = get_cli_logger("tools.export_soft_copyright")
 
 # 优先级：入口与公共层在前，算法层在后
 FILE_ORDER = [
@@ -110,7 +113,7 @@ def main() -> int:
 
     out_dir = settings.storage_dir("exports")
     header = (f"视界智研算法实验平台 V1.0  源代码\n"
-              f"导出时间：{datetime.now():%Y-%m-%d %H:%M:%S}\n"
+              f"导出时间：{datetime.now(timezone.utc).astimezone():%Y-%m-%d %H:%M:%S}\n"
               f"文件总数：{len(files)}   有效代码行：{len(lines)}\n")
 
     head_lines = lines[:needed]
@@ -122,7 +125,7 @@ def main() -> int:
         header + "\n".join(tail_lines), encoding="utf-8")
 
     stats = {
-        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "generated_at": datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds"),
         "file_count": len(files),
         "code_lines": len(lines),
         "page_size": page_size,
@@ -132,12 +135,12 @@ def main() -> int:
     (out_dir / "软著源代码_统计.json").write_text(
         json.dumps(stats, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    print("=" * 68)
-    print(f"源码文件 {len(files)} 个，有效代码行 {len(lines)} 行")
-    print(f"前 {args.pages} 页 / 后 {args.pages} 页已导出至：{out_dir}")
-    print("=" * 68)
+    log.info("=" * 68)
+    log.info(f"源码文件 {len(files)} 个，有效代码行 {len(lines)} 行")
+    log.info(f"前 {args.pages} 页 / 后 {args.pages} 页已导出至：{out_dir}")
+    log.info("=" * 68)
     for rel, count in stats["top_files"][:10]:
-        print(f"  {count:>6} 行  {rel}")
+        log.info(f"  {count:>6} 行  {rel}")
     return 0
 
 

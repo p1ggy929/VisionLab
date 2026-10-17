@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from flask import Blueprint, request
 
+from core.config import settings
 from core.exceptions import ValidationError
 from services import auth_service
 
@@ -21,9 +22,10 @@ def login():
         return fail("请输入用户名和密码。", 40000, 400)
     result = auth_service.login(username, password, request.remote_addr or "")
     response = ok(result)
-    # 同时写入 Cookie，便于直接用浏览器访问页面路由
-    response.set_cookie("vl_token", result["token"], httponly=False, samesite="Lax",
-                        max_age=int(12 * 3600))
+    # 会话令牌通过 HttpOnly Cookie 下发：浏览器脚本无法读取，登录态仍可跨页恢复。
+    session_hours = int(settings.get("server.session_hours", 12) or 12)
+    response.set_cookie("vl_token", result["token"], httponly=True, samesite="Lax",
+                        secure=request.is_secure, max_age=session_hours * 3600)
     return response
 
 
@@ -31,8 +33,9 @@ def login():
 @login_required
 def logout():
     user = current_user()
-    auth_service.audit(user["id"], user["username"], "logout", "user", user["id"],
-                       "success", request.remote_addr or "")
+    auth_service.audit(auth_service.AuditEvent(
+        user["id"], user["username"], "logout", "user", user["id"],
+        "success", request.remote_addr or ""))
     response = ok({"logged_out": True})
     response.delete_cookie("vl_token")
     return response
@@ -74,8 +77,9 @@ def create_user():
         str(data.get("username", "")), str(data.get("password", "")),
         role=str(data.get("role", "researcher")),
         display_name=data.get("display_name"), email=data.get("email"))
-    auth_service.audit(current_user()["id"], current_user()["username"], "user.create",
-                       "user", user_id, "success", request.remote_addr or "")
+    auth_service.audit(auth_service.AuditEvent(
+        current_user()["id"], current_user()["username"], "user.create",
+        "user", user_id, "success", request.remote_addr or ""))
     return ok(auth_service.get_user(user_id))
 
 

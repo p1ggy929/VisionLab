@@ -24,7 +24,7 @@ class DepthSampler:
         self.max_m = float(max_m if max_m is not None else settings.get("ranging.max_range_m", 20.0))
 
     # ------------------------------------------------------------------
-    def _patch_value(self, depth_m: np.ndarray, x: int, y: int) -> float | None:
+    def patch_value(self, depth_m: np.ndarray, x: int, y: int) -> float | None:
         if self.mode == "point":
             value = float(depth_m[y, x])
             return value if self.min_m <= value <= self.max_m else None
@@ -54,7 +54,7 @@ class DepthSampler:
             x, y = int(point[0]), int(point[1])
             if not (0 <= x < w and 0 <= y < h):
                 continue
-            value = self._patch_value(depth_m, x, y)
+            value = self.patch_value(depth_m, x, y)
             if value is None:
                 continue
             values.append(value)
@@ -63,7 +63,8 @@ class DepthSampler:
         return values, valid_points, laterals
 
     # ------------------------------------------------------------------
-    def box_center_distance(self, depth_m: np.ndarray, box, intr: Intrinsics) -> tuple[float | None, tuple[int, int] | None]:
+    def box_center_distance(self, depth_m: np.ndarray, box,
+                            intr: Intrinsics) -> tuple[float | None, tuple[int, int] | None]:
         """检测框中心的局部中位数距离（项目 A 的 compute_box_distance）。"""
         if box is None or len(box) < 4:
             return None, None
@@ -72,10 +73,11 @@ class DepthSampler:
         cy = int((float(box[1]) + float(box[3])) / 2.0)
         if not (0 <= cx < w and 0 <= cy < h):
             return None, None
-        value = self._patch_value(depth_m, cx, cy)
+        value = self.patch_value(depth_m, cx, cy)
         return value, (cx, cy)
 
-    def contour_points(self, contour: np.ndarray, num_points: int | None = None) -> np.ndarray:
+    @staticmethod
+    def contour_points(contour: np.ndarray, num_points: int | None = None) -> np.ndarray:
         """轮廓等距采样（项目 B 的 np.linspace 做法）。"""
         num_points = int(num_points or settings.get("ranging.sample_points", 20))
         if contour is None or len(contour) == 0:
@@ -86,7 +88,8 @@ class DepthSampler:
         idx = np.linspace(0, len(pts) - 1, num_points).astype(int)
         return pts[idx].astype(np.int32)
 
-    def box_edge_points(self, box, num_points: int | None = None) -> np.ndarray:
+    @staticmethod
+    def box_edge_points(box, num_points: int | None = None) -> np.ndarray:
         """沿检测框边界等距采样（用于目标边界距离）。"""
         if box is None or len(box) < 4:
             return np.empty((0, 2), dtype=np.int32)

@@ -17,6 +17,12 @@ _CONFIG_WHITELIST = (
     "training", "analysis", "report", "logging", "storage",
 )
 
+# 设置页展示的存储子目录
+_STORAGE_DIR_NAMES = (
+    "datasets", "captures", "models", "runs", "results",
+    "calibration", "reports", "logs", "exports",
+)
+
 
 @bp.get("/system/info")
 def system_info():
@@ -30,8 +36,8 @@ def health():
     return ok({"system": health_service.system_info(),
                "metrics": health_service.metrics(),
                "tables": db.table_counts(),
-               "camera": health_service._camera_metrics(),  # noqa: SLF001
-               "queue": health_service._queue_metrics()})  # noqa: SLF001
+               "camera": health_service.camera_metrics(),  # noqa: SLF001
+               "queue": health_service.queue_metrics()})  # noqa: SLF001
 
 
 @bp.post("/system/self-check")
@@ -65,9 +71,10 @@ def logs_clear():
 @bp.get("/system/settings")
 def get_settings_api():
     data = {key: settings.get(key) for key in _CONFIG_WHITELIST}
-    data["all_dirs"] = {name: str(settings.storage_dir(name))
-                        for name in ("datasets", "captures", "models", "runs",
-                                     "results", "calibration", "reports", "logs", "exports")}
+    all_dirs = {}
+    for name in _STORAGE_DIR_NAMES:
+        all_dirs[name] = str(settings.storage_dir(name))
+    data["all_dirs"] = all_dirs
     data["db_path"] = str(settings.db_path)
     data["readonly"] = True
     return ok(data)

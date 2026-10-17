@@ -15,13 +15,15 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+    sys.path.append(str(ROOT))
 
 from algorithms import registry  # noqa: E402
 from algorithms.detection.yolo_adapter import YoloDetectorAdapter  # noqa: E402
 from core import media  # noqa: E402
 from core.config import settings  # noqa: E402
-from core.logging_setup import setup_logging  # noqa: E402
+from core.logging_setup import get_cli_logger, setup_logging  # noqa: E402
+
+log = get_cli_logger("tools.check_yolo")
 
 DATASET = Path(r"E:\2Project\2026dachuang\Yolo_dis_v3源代码\datasets\images\val")
 
@@ -50,14 +52,14 @@ def main() -> int:
 
     images = pick_images(3)
     if not images:
-        print("找不到可用于推理的测试图像。")
+        log.info("找不到可用于推理的测试图像。")
         return 1
-    print(f"测试图像 {len(images)} 张，来自 {images[0].parent}")
-    print(f"权重模式: {args.mode}")
-    print("权重搜索目录：")
+    log.info(f"测试图像 {len(images)} 张，来自 {images[0].parent}")
+    log.info(f"权重模式: {args.mode}")
+    log.info("权重搜索目录：")
     for folder in settings.weight_search_dirs("detection"):
         count = len(list(folder.glob('*.pt')))
-        print(f"  {folder}  ({count} 个 .pt)")
+        log.info(f"  {folder}  ({count} 个 .pt)")
 
     configs = YoloDetectorAdapter.available_configs()
     if args.arch:
@@ -65,7 +67,7 @@ def main() -> int:
     elif not args.all:
         picks = {"yolov8n", "yolov9t", "yolov10m", "yolo11s", "yolo12m"}
         configs = [c for c in configs if c["key"] in picks]
-    print(f"\n将测试 {len(configs)} 个配置\n" + "=" * 96)
+    log.info(f"\n将测试 {len(configs)} 个配置\n" + "=" * 96)
 
     ok_count, fail_count = 0, 0
     total_classes, translated, rows = set(), set(), []
@@ -94,32 +96,32 @@ def main() -> int:
                          "类别数": len(names), "检出": len(pred.get("boxes") or []),
                          "加载(ms)": round(load_ms), "推理(ms)": round(infer_ms)})
             detail = ("  检出类别=" + ",".join(sorted(set(labels)))) if labels else ""
-            print(f"[OK ] {key:<10} 权重={list((desc.get('sources') or {}).values())}  "
+            log.info(f"[OK ] {key:<10} 权重={list((desc.get('sources') or {}).values())}  "
                   f"类别 {len(names)}  检出 {len(pred.get('boxes') or [])}  "
                   f"加载 {load_ms:.0f}ms 推理 {infer_ms:.0f}ms{detail}")
             ok_count += 1
         except Exception as exc:  # noqa: BLE001
-            print(f"[ERR] {key:<10} {str(exc)[:150]}")
+            log.info(f"[ERR] {key:<10} {str(exc)[:150]}")
             fail_count += 1
 
-    print("=" * 96)
-    print(f"通过 {ok_count} 个，失败 {fail_count} 个")
+    log.info("=" * 96)
+    log.info(f"通过 {ok_count} 个，失败 {fail_count} 个")
     if rows:
         header = list(rows[0].keys())
-        print("\n| " + " | ".join(header) + " |")
-        print("|" + "---|" * len(header))
+        log.info("\n| " + " | ".join(header) + " |")
+        log.info("|" + "---|" * len(header))
         for row in rows:
-            print("| " + " | ".join(str(row[h]) for h in header) + " |")
+            log.info("| " + " | ".join(str(row[h]) for h in header) + " |")
     if total_classes:
         platform_classes = set(settings.detection_class_names())
-        print(f"\n平台 11 类（中文）：{sorted(platform_classes)}")
-        print(f"权重内置类别名（英文）：{sorted(total_classes)}")
-        print(f"经平台别名映射后的检出类别：{sorted(translated) or '（本次抽检未检出目标）'}")
+        log.info(f"\n平台 11 类（中文）：{sorted(platform_classes)}")
+        log.info(f"权重内置类别名（英文）：{sorted(total_classes)}")
+        log.info(f"经平台别名映射后的检出类别：{sorted(translated) or '（本次抽检未检出目标）'}")
         unmapped = {t for t in translated if t not in platform_classes}
         if unmapped:
-            print(f"[警告] 未被映射到平台类别体系的检出：{sorted(unmapped)}")
+            log.info(f"[警告] 未被映射到平台类别体系的检出：{sorted(unmapped)}")
         else:
-            print("[OK ] 所有权重类别名都能映射到平台的中文类别体系")
+            log.info("[OK ] 所有权重类别名都能映射到平台的中文类别体系")
     return 1 if fail_count else 0
 
 

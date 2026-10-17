@@ -11,10 +11,12 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+    sys.path.append(str(ROOT))
 
 from core import db  # noqa: E402
-from core.logging_setup import setup_logging  # noqa: E402
+from core.logging_setup import get_cli_logger, setup_logging  # noqa: E402
+
+log = get_cli_logger("tools.tidy_state")
 
 KEEP_PREFIXES = ("历史数据", "车辆")
 
@@ -40,11 +42,11 @@ def main() -> int:
         if row:
             conn.execute("UPDATE calibration_plan SET is_active=1 WHERE id=?", (row[0],))
 
-    print("保留的校正方案：")
+    log.info("保留的校正方案：")
     for item in db.query_all("SELECT name, method, sample_count, rmse_before, rmse_after, "
                              "is_active FROM calibration_plan ORDER BY created_at"):
         flag = "已启用" if item["is_active"] else "      "
-        print(f"  [{flag}] {item['name']:<20} {item['method']:<10} "
+        log.info(f"  [{flag}] {item['name']:<20} {item['method']:<10} "
               f"样本 {item['sample_count']:<5} RMSE {item['rmse_before']} -> {item['rmse_after']}")
     return 0
 

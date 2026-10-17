@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -207,6 +208,7 @@ class YoloDetectorAdapter(BasePlugin):
     # ------------------------------------------------------------ 描述
     def describe(self) -> dict:
         info = super().describe()
+        imgsz = settings.get("detection.default_imgsz", 640)
         info.update({
             "arch": self.arch,
             "framework": "ultralytics",
@@ -214,13 +216,14 @@ class YoloDetectorAdapter(BasePlugin):
             "sources": dict(self._source_map),
             "num_classes": len(self._names) or settings.detection_num_classes(),
             "class_names": [self._names[k] for k in sorted(self._names)] or self.class_names,
-            "input_size": f"{settings.get('detection.default_imgsz', 640)}x{settings.get('detection.default_imgsz', 640)}",
+            "input_size": f"{imgsz}x{imgsz}",
         })
         return info
 
     # ------------------------------------------------------------ 推理
-    def _predict_one(self, model, image: np.ndarray, conf: float, iou: float,
-                     imgsz: int, max_det: int, source: str) -> list[dict]:
+    def _predict_one(self, model, image: np.ndarray, options: "PredictOptions") -> list[dict]:
+        conf, iou, imgsz, max_det, source = (options.conf, options.iou, options.imgsz,
+                                             options.max_det, options.source)
         results = model.predict(image, conf=conf, iou=iou, imgsz=imgsz, max_det=max_det,
                                 device=self.device, verbose=False)
         out: list[dict] = []
@@ -268,7 +271,9 @@ class YoloDetectorAdapter(BasePlugin):
         collected: list[dict] = []
         for source, model in self._models.items():
             try:
-                collected.extend(self._predict_one(model, image, conf, iou, imgsz, max_det, source))
+                options = PredictOptions(conf=conf, iou=iou, imgsz=imgsz,
+                                         max_det=max_det, source=source)
+                collected.extend(self._predict_one(model, image, options))
             except Exception as exc:  # noqa: BLE001
                 log.warning("推理失败[%s]: %s", source, exc)
 
@@ -303,6 +308,17 @@ class YoloDetectorAdapter(BasePlugin):
             kwargs["project"] = out_dir
         path = model.export(**kwargs)
         return str(path)
+
+
+@dataclass(frozen=True)
+class PredictOptions:
+    """单模型推理参数（阈值、输入尺寸、来源权重）。"""
+
+    conf: float
+    iou: float
+    imgsz: int
+    max_det: int
+    source: str
 
 
 @register_plugin("detection", "yolo", YoloDetectorAdapter,

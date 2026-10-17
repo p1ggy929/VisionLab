@@ -21,7 +21,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+    sys.path.append(str(ROOT))
 
 from core import db  # noqa: E402
 from core.config import settings  # noqa: E402
@@ -114,9 +114,9 @@ def bootstrap_data() -> None:
     from services import model_registry, project_service
 
     if not db.query_scalar("SELECT COUNT(*) FROM project WHERE is_deleted=0", (), 0):
-        project = project_service.create_project(
+        project = project_service.create_project(project_service.ProjectSpec(
             "校园道路视觉感知", "视界智研平台的默认项目，用于承载检测/分割/测距实验",
-            scene="campus_road", app_target="sweeper")
+            scene="campus_road", app_target="sweeper"))
         log.info("已创建默认项目: %s", project["name"])
 
     if not db.query_scalar("SELECT COUNT(*) FROM model WHERE is_deleted=0", (), 0):
@@ -191,7 +191,7 @@ def main() -> int:
   离线演示   无 RealSense 设备时自动使用合成场景
 ============================================================
 """
-    print(banner)
+    log.info(banner)
     log.info("平台启动: %s", url)
 
     if not args.no_browser and not debug:

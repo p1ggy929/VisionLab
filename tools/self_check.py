@@ -10,18 +10,21 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+    sys.path.append(str(ROOT))
+
+from core.logging_setup import get_cli_logger  # noqa: E402
+
+log = get_cli_logger("tools.self_check")
 
 WIDTH = 74
 
 
 def _print_header() -> None:
-    print("=" * WIDTH)
-    print("  视界智研 · 环境自检")
-    print("=" * WIDTH)
+    log.info("=" * WIDTH)
+    log.info("  视界智研 · 环境自检")
+    log.info("=" * WIDTH)
 
 
 def _storage_root() -> str:
@@ -34,17 +37,17 @@ def _storage_root() -> str:
 
 
 def _report_storage_failure(exc: BaseException) -> int:
-    print(f"[错误] {'存储目录不可用':<22} {_storage_root()}")
-    print(f"       {type(exc).__name__}: {exc}")
-    print("-" * WIDTH)
-    print("共 1 项，通过 0，错误 1，警告 0")
-    print("环境未就绪：请先修复存储目录，再重新启动。")
-    print("=" * WIDTH)
-    print()
-    print("排查建议：")
-    print("  1. 打开 configs/default.yaml，确认 storage.root 指向真实存在的盘符或目录；")
-    print("  2. 该目录需要当前用户可写（不要指向只读盘、光驱或已断开的网络位置）；")
-    print("  3. 若曾用环境变量覆盖，清掉后重试：Remove-Item Env:VISIONLAB_STORAGE__ROOT")
+    log.info(f"[错误] {'存储目录不可用':<22} {_storage_root()}")
+    log.info(f"       {type(exc).__name__}: {exc}")
+    log.info("-" * WIDTH)
+    log.info("共 1 项，通过 0，错误 1，警告 0")
+    log.info("环境未就绪：请先修复存储目录，再重新启动。")
+    log.info("=" * WIDTH)
+    log.info()
+    log.info("排查建议：")
+    log.info("  1. 打开 configs/default.yaml，确认 storage.root 指向真实存在的盘符或目录；")
+    log.info("  2. 该目录需要当前用户可写（不要指向只读盘、光驱或已断开的网络位置）；")
+    log.info("  3. 若曾用环境变量覆盖，清掉后重试：Remove-Item Env:VISIONLAB_STORAGE__ROOT")
     return 2
 
 
@@ -57,7 +60,7 @@ def main() -> int:
 
         setup_logging()
     except Exception as exc:
-        print(f"[警告] {'日志初始化失败':<22} {type(exc).__name__}: {exc}")
+        log.info(f"[警告] {'日志初始化失败':<22} {type(exc).__name__}: {exc}")
 
     try:
         from core import db
@@ -71,23 +74,23 @@ def main() -> int:
 
         report = health_service.self_check()
     except Exception as exc:
-        print(f"[错误] {'自检执行失败':<22} {type(exc).__name__}: {exc}")
-        print("-" * WIDTH)
-        print("共 1 项，通过 0，错误 1，警告 0")
-        print("环境未就绪：自检本身未能完成，请根据上面的异常定位。")
-        print("=" * WIDTH)
+        log.info(f"[错误] {'自检执行失败':<22} {type(exc).__name__}: {exc}")
+        log.info("-" * WIDTH)
+        log.info("共 1 项，通过 0，错误 1，警告 0")
+        log.info("环境未就绪：自检本身未能完成，请根据上面的异常定位。")
+        log.info("=" * WIDTH)
         return 2
 
     for check in report["checks"]:
         mark = "OK  " if check["ok"] else ("警告" if check["level"] == "warning" else "错误")
-        print(f"[{mark}] {check['name']:<22} {check['detail']}")
+        log.info(f"[{mark}] {check['name']:<22} {check['detail']}")
 
     summary = report["summary"]
-    print("-" * WIDTH)
-    print(f"共 {summary['total']} 项，通过 {summary['passed']}，"
+    log.info("-" * WIDTH)
+    log.info(f"共 {summary['total']} 项，通过 {summary['passed']}，"
           f"错误 {summary['errors']}，警告 {summary['warnings']}")
-    print(report["conclusion"])
-    print("=" * WIDTH)
+    log.info(report["conclusion"])
+    log.info("=" * WIDTH)
     return 1 if summary["errors"] else 0
 
 

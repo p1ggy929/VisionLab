@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import shutil
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from .config import settings
@@ -49,7 +49,8 @@ def safe_name(name: str, fallback: str = "item") -> str:
 
 
 def timestamp(fmt: str = "%Y%m%d_%H%M%S") -> str:
-    return datetime.now().strftime(fmt)
+    """本地时间戳字符串（显式取 UTC 再转本地时区，避免依赖隐式时区）。"""
+    return datetime.now(timezone.utc).astimezone().strftime(fmt)
 
 
 def sha256_file(path: Path, chunk: int = 1 << 20) -> str:

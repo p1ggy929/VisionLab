@@ -13,10 +13,13 @@ import urllib.error
 import urllib.request
 from http.cookiejar import CookieJar
 from pathlib import Path
-
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+    sys.path.append(str(ROOT))
+
+from core.logging_setup import get_cli_logger  # noqa: E402
+
+log = get_cli_logger("tools.e2e_check")
 
 
 class Client:
@@ -57,8 +60,8 @@ class Client:
 
 
 def step(index: int, title: str) -> None:
-    print(f"\n[{index:>2}] {title}")
-    print("-" * 70)
+    log.info(f"\n[{index:>2}] {title}")
+    log.info("-" * 70)
 
 
 def main() -> int:
@@ -73,7 +76,7 @@ def main() -> int:
 
     def check(name: str, condition: bool, detail: str = "") -> None:
         mark = "OK  " if condition else "FAIL"
-        print(f"   [{mark}] {name}" + (f"  {detail}" if detail else ""))
+        log.info(f"   [{mark}] {name}" + (f"  {detail}" if detail else ""))
         if not condition:
             failures.append(name)
 
@@ -294,16 +297,16 @@ def main() -> int:
             split_info.append(f"{dataset['name']}:{stats.get('splits')}")
     check("图像总量达标（目标 5,814）", total_images >= 5814, f"{total_images} 张")
     for info in split_info:
-        print(f"        划分 {info}")
+        log.info(f"        划分 {info}")
 
-    print("\n" + "=" * 70)
+    log.info("\n" + "=" * 70)
     if failures:
-        print(f"端到端验收完成：{len(failures)} 项未通过")
+        log.info(f"端到端验收完成：{len(failures)} 项未通过")
         for name in failures:
-            print("   - " + name)
+            log.info("   - " + name)
         return 1
-    print("端到端验收全部通过")
-    print("=" * 70)
+    log.info("端到端验收全部通过")
+    log.info("=" * 70)
     return 0
 
 

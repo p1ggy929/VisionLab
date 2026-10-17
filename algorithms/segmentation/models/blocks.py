@@ -70,8 +70,8 @@ class OutConv(nn.Module):
         return self.conv(x)
 
 
-class expansive_block(nn.Module):
-    """ResUNet 解码块：上采样 + 可选拼接 + 双卷积（保持原命名）。"""
+class ExpansiveBlock(nn.Module):
+    """ResUNet 解码块：上采样 + 可选拼接 + 双卷积。"""
 
     def __init__(self, in_channels, mid_channels, out_channels):
         super().__init__()
@@ -99,7 +99,7 @@ def final_block(in_channels, out_channels):
     )
 
 
-class Attexpansive_block(nn.Module):
+class AttExpansiveBlock(nn.Module):
     """Attention-ResUNet 的上采样块（无拼接，仅上采样 + 卷积）。"""
 
     def __init__(self, in_channels, out_channels):
@@ -132,29 +132,29 @@ def contracting_block(in_channels, out_channels):
 double_conv = contracting_block
 
 
-class Attention_block(nn.Module):
+class AttentionBlock(nn.Module):
     """注意力门（Attention Gate），移植自项目 B / Attention U-Net。"""
 
-    def __init__(self, F_g, F_l, F_int):
+    def __init__(self, f_g, f_l, f_int):
         super().__init__()
-        self.W_g = nn.Sequential(
-            nn.Conv2d(F_g, F_int, kernel_size=1, stride=1, padding=0),
-            nn.BatchNorm2d(F_int),
+        self.w_g = nn.Sequential(
+            nn.Conv2d(f_g, f_int, kernel_size=1, stride=1, padding=0),
+            nn.BatchNorm2d(f_int),
         )
-        self.W_x = nn.Sequential(
-            nn.Conv2d(F_l, F_int, kernel_size=1, stride=1, padding=0),
-            nn.BatchNorm2d(F_int),
+        self.w_x = nn.Sequential(
+            nn.Conv2d(f_l, f_int, kernel_size=1, stride=1, padding=0),
+            nn.BatchNorm2d(f_int),
         )
         self.psi = nn.Sequential(
-            nn.Conv2d(F_int, 1, kernel_size=1, stride=1, padding=0),
+            nn.Conv2d(f_int, 1, kernel_size=1, stride=1, padding=0),
             nn.BatchNorm2d(1),
             nn.Sigmoid(),
         )
         self.relu = nn.ReLU(inplace=True)
 
     def forward(self, g, x):
-        g1 = self.W_g(g)
-        x1 = self.W_x(x)
+        g1 = self.w_g(g)
+        x1 = self.w_x(x)
         psi = self.relu(g1 + x1)
         psi = self.psi(psi)
         return x * psi

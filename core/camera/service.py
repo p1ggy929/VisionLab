@@ -87,8 +87,14 @@ class CameraService:
         self._recorder: Optional[VideoRecorder] = None
         self._capture_dir: Optional[Path] = None
 
+    @property
+    def backend(self) -> Optional[CameraBackend]:
+        """当前相机后端的只读视图（供 API 层展示回放进度等）。"""
+        return self._backend
+
     # ------------------------------------------------------- 后端选择
-    def _build_backend(self, prefer: str | None = None,
+    @staticmethod
+    def _build_backend(prefer: str | None = None,
                        replay_source: dict | None = None) -> CameraBackend:
         """按优先级构建相机后端。
 

@@ -13,10 +13,12 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+    sys.path.append(str(ROOT))
 
 from core import db  # noqa: E402
-from core.logging_setup import setup_logging  # noqa: E402
+from core.logging_setup import get_cli_logger, setup_logging  # noqa: E402
+
+log = get_cli_logger("tools.cleanup_demo")
 
 PATTERNS = ("端到端验收实验%", "实时实验%", "冒烟测试实验%", "默认实验%")
 
@@ -34,24 +36,24 @@ def main() -> int:
                         f"WHERE is_deleted=0 AND ({where}) ORDER BY created_at",
                         PATTERNS)
     if not rows:
-        print("没有需要清理的演示实验。")
+        log.info("没有需要清理的演示实验。")
         return 0
 
-    print(f"发现 {len(rows)} 个演示实验：")
+    log.info(f"发现 {len(rows)} 个演示实验：")
     total_records = 0
     for row in rows:
         count = int(db.query_scalar("SELECT COUNT(*) FROM ranging_result WHERE experiment_id=?",
                                      (row["id"],), 0) or 0)
         total_records += count
-        print(f"  {row['id']}  {row['name']}  ({row['task_type']}, {count} 条测距记录)")
+        log.info(f"  {row['id']}  {row['name']}  ({row['task_type']}, {count} 条测距记录)")
 
     reports = db.query_all(
         "SELECT id FROM report WHERE experiment_id IN "
         f"(SELECT id FROM experiment WHERE is_deleted=0 AND ({where}))", PATTERNS)
-    print(f"关联报告 {len(reports)} 份，测距记录合计 {total_records} 条")
+    log.info(f"关联报告 {len(reports)} 份，测距记录合计 {total_records} 条")
 
     if not args.apply:
-        print("\n以上为预览。加 --apply 参数执行删除。")
+        log.info("\n以上为预览。加 --apply 参数执行删除。")
         return 0
 
     ids = [row["id"] for row in rows]
@@ -64,11 +66,11 @@ def main() -> int:
         conn.execute(f"DELETE FROM report WHERE experiment_id IN ({marks})", ids)
         conn.execute(f"DELETE FROM task_queue WHERE experiment_id IN ({marks})", ids)
         conn.execute(f"DELETE FROM experiment WHERE id IN ({marks})", ids)
-    print(f"\n已删除 {len(ids)} 个演示实验及其产物。")
-    print("剩余数据：")
+    log.info(f"\n已删除 {len(ids)} 个演示实验及其产物。")
+    log.info("剩余数据：")
     for table, count in db.table_counts().items():
         if count:
-            print(f"  {table:<22} {count}")
+            log.info(f"  {table:<22} {count}")
     return 0
 
 

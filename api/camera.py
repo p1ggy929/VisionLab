@@ -59,9 +59,9 @@ def create_replay_sample():
 
 @bp.get("/camera/replay-progress")
 def replay_progress():
-    backend = get_camera_service()._backend  # noqa: SLF001 - 只读探查
+    backend = get_camera_service().backend
     if backend is not None and hasattr(backend, "progress"):
-        return ok(backend.progress())  # type: ignore[attr-defined]
+        return ok(backend.progress())
     return ok({"active": False})
 
 
@@ -228,13 +228,13 @@ def take_snapshot(session_id: str):
 @require_perm("capture:run")
 def set_truth(session_id: str):
     data = payload()
-    item = capture_service.set_truth(
-        session_id, str(data.get("stamp", "")),
+    item = capture_service.set_truth(session_id, capture_service.TruthEntry(
+        stamp=str(data.get("stamp", "")),
         actual_distance_m=data.get("actual_distance_m"),
         actual_min_m=data.get("actual_min_m"), actual_max_m=data.get("actual_max_m"),
         actual_source=str(data.get("actual_source", "tape")),
         category=data.get("category"), illumination=data.get("illumination"),
-        notes=str(data.get("notes", "")))
+        notes=str(data.get("notes", ""))))
     return ok(item)
 
 

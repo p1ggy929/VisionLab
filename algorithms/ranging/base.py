@@ -96,7 +96,8 @@ def summarize_points(values: list[float], points: list[tuple[int, int]], *,
         if scale_info:
             extra["calibration"] = scale_info
         if 0 <= index < len(points):
-            extra["nearest_point" if kind == "min" else ("farthest_point" if kind == "max" else "point")] = list(points[index])
+            point_key = {"min": "nearest_point", "max": "farthest_point"}.get(kind, "point")
+            extra[point_key] = list(points[index])
         return RangingResult(
             target_kind=target_kind, metric_kind=kind,
             depth_m=corrected, raw_depth_m=raw, corrected_depth_m=corrected,

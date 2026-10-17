@@ -224,7 +224,7 @@ class MockBackend(CameraBackend):
             if x2 <= x1 or y2 <= y1:
                 continue
 
-            self._paint(color, obj, x1, y1, x2, y2, t)
+            self._paint(color, obj, (x1, y1, x2, y2), t)
             depth[y1:y2 + 1, x1:x2 + 1] = zc
             objects_meta.append({
                 "index": idx, "name": obj.name, "category": obj.name,
@@ -254,8 +254,9 @@ class MockBackend(CameraBackend):
         )
 
     @staticmethod
-    def _paint(color: np.ndarray, obj: _SceneObject, x1: int, y1: int, x2: int, y2: int, t: float) -> None:
+    def _paint(color: np.ndarray, obj: _SceneObject, box: tuple[int, int, int, int], t: float) -> None:
         """把目标画到 RGB 图上（不同 kind 用不同画法，便于检测/分割演示）。"""
+        x1, y1, x2, y2 = box
         base = obj.color
         if obj.kind == "flat":
             cv2.rectangle(color, (x1, y1 + (y2 - y1) // 2), (x2, y2), base, -1)

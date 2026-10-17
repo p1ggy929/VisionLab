@@ -75,6 +75,22 @@ def get_logger(name: str = "") -> logging.Logger:
     return logging.getLogger(f"{_ROOT_NAME}.{name}" if name else _ROOT_NAME)
 
 
+def get_cli_logger(name: str = "") -> logging.Logger:
+    """命令行脚本专用日志器：只输出消息本身，保持终端排版简洁。
+
+    脚本的用途是给人看进度与结果，若沿用 Web 端的
+    ``[时间] [级别] [模块]`` 前缀，表格与分节线会被撑散、难以阅读。
+    """
+    logger = logging.getLogger(f"{_ROOT_NAME}.cli.{name}" if name else f"{_ROOT_NAME}.cli")
+    if not logger.handlers:
+        handler = logging.StreamHandler(stream=sys.stdout)
+        handler.setFormatter(logging.Formatter("%(message)s"))
+        logger.addHandler(handler)
+        logger.setLevel(logging.INFO)
+        logger.propagate = False
+    return logger
+
+
 class _MemoryHandler(logging.Handler):
     """内存环形缓冲，供监控页读取最近日志。"""
 

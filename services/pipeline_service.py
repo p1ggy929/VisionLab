@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import threading
 import time
 from typing import Any
@@ -26,6 +28,23 @@ from core.logging_setup import get_logger
 log = get_logger("services.pipeline")
 
 MODES = ("detection", "segmentation", "both")
+
+
+@dataclass(frozen=True)
+class MeasurementRecord:
+    """一条待落库的测距结果（含人工真值）。"""
+
+    target_kind: str
+    metric_kind: str
+    result: dict
+    actual_value: float | None = None
+    actual_source: str = "tape"
+    category: str | None = None
+    notes: str = ""
+    illumination: str | None = None
+    media_uri: str | None = None
+    detection_result_id: str | None = None
+    segmentation_result_id: str | None = None
 
 
 class PipelineService:
@@ -83,13 +102,14 @@ class PipelineService:
                         reload_needed = True
                 self.config[key] = value
             if reload_needed:
-                self._reload_plugins()
+                self.reload_plugins()
             return dict(self.config)
 
-    def _detector_class_names(self) -> list[str]:
+    @staticmethod
+    def _detector_class_names() -> list[str]:
         return settings.detection_class_names()
 
-    def _reload_plugins(self) -> None:
+    def reload_plugins(self) -> None:
         """按配置重建插件实例（模型可插拔）。"""
         mode = self.config["mode"]
         errors: list[str] = []
@@ -145,7 +165,8 @@ class PipelineService:
         row = db.query_one("SELECT arch FROM model WHERE id=?", (model_id,))
         return row["arch"] if row else None
 
-    def _weights_uri(self, model_id: str | None) -> str | None:
+    @staticmethod
+    def _weights_uri(model_id: str | None) -> str | None:
         if not model_id:
             return None
         row = db.query_one("SELECT weights_uri FROM model WHERE id=?", (model_id,))
@@ -181,7 +202,8 @@ class PipelineService:
             log.info("实验会话结束: %s", experiment_id)
             return summary
 
-    def _experiment_metrics(self, experiment_id: str) -> dict:
+    @staticmethod
+    def _experiment_metrics(experiment_id: str) -> dict:
         rows = db.query_all(
             "SELECT COUNT(*) AS n, AVG(abs_error_m) AS mae, "
             "AVG(rel_error) AS mre FROM ranging_result WHERE experiment_id=?",
@@ -322,14 +344,14 @@ class PipelineService:
                    f"推理 {detection_payload['infer_ms']:.1f} ms"]
             if calibration is not None:
                 hud.append(f"已启用校正: {calibration.name}")
-            overlay = media.draw_hud(overlay, hud, (12, 10), 26, media.COLOR_TEXT, 16)
+            overlay = media.draw_hud(overlay, hud, (12, 10))
 
         # 暂停/标准距离点提示
         paused = bool(self.session.get("paused"))
         plan_hint = self._plan_hint(object_results)
         if paused:
-            overlay = media.draw_hud(overlay, ["⏸ 已暂停：可录入真值"], (12, 700), 26,
-                                     media.COLOR_WARN, 18)
+            overlay = media.draw_hud(overlay, ["⏸ 已暂停：可录入真值"], (12, 700),
+                                     media.HudStyle(color=media.COLOR_WARN, size=18))
 
         self._last_overlay = overlay
         result = {
@@ -355,7 +377,8 @@ class PipelineService:
         self.session["frames"] = int(self.session.get("frames", 0)) + 1
         return result
 
-    def _plan_hint(self, object_results: list[dict]) -> dict | None:
+    @staticmethod
+    def _plan_hint(object_results: list[dict]) -> dict | None:
         """判断当前最近目标是否落在某个标准距离点附近，提示可以定格记录。"""
         plan = list(settings.get("ranging.distance_plan_m", []) or [])
         if not plan or not object_results:
@@ -420,14 +443,15 @@ class PipelineService:
             }, id_prefix="seg")
         return created
 
-    def record_measurement(self, target_kind: str, metric_kind: str, result: dict,
-                           actual_value: float | None = None, actual_source: str = "tape",
-                           category: str | None = None, notes: str = "",
-                           illumination: str | None = None,
-                           media_uri: str | None = None,
-                           detection_result_id: str | None = None,
-                           segmentation_result_id: str | None = None) -> dict:
+    def record_measurement(self, record: MeasurementRecord) -> dict:
         """写入一条测距记录（含真值与误差）。"""
+        target_kind, metric_kind, result = record.target_kind, record.metric_kind, record.result
+        actual_value, actual_source = record.actual_value, record.actual_source
+        category, notes = record.category, record.notes
+        illumination = record.illumination
+        media_uri = record.media_uri
+        detection_result_id = record.detection_result_id
+        segmentation_result_id = record.segmentation_result_id
         experiment_id = self.session.get("experiment_id")
         if not experiment_id:
             raise ValidationError("当前没有进行中的实验会话，无法记录测距结果。")
@@ -496,10 +520,12 @@ class PipelineService:
         self.session["recorded"] = int(self.session.get("recorded", 0)) + 1
         return db.decode_row(db.query_one("SELECT * FROM ranging_result WHERE id=?", (record_id,))) or {}
 
-    def _strategy_of(self, target_kind: str) -> str:
+    @staticmethod
+    def _strategy_of(target_kind: str) -> str:
         return "mask_boundary" if str(target_kind).startswith("road") else "box_boundary"
 
-    def _infer_task_type(self, target_kind: str) -> str:
+    @staticmethod
+    def _infer_task_type(target_kind: str) -> str:
         return "segmentation" if str(target_kind).startswith("road") else "detection"
 
     def status(self) -> dict:
@@ -551,7 +577,7 @@ def get_pipeline() -> PipelineService:
             if _service is None:
                 _service = PipelineService()
                 try:
-                    _service._reload_plugins()  # noqa: SLF001 - 首次构建即加载默认插件
+                    _service.reload_plugins()  # noqa: SLF001 - 首次构建即加载默认插件
                 except Exception as exc:  # noqa: BLE001
                     log.warning("初始插件加载失败: %s", exc)
     return _service

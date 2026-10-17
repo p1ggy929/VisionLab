@@ -25,11 +25,11 @@ def templates():
 def create_report():
     data = payload()
     user = current_user()
-    report = report_service.create_report(
+    report = report_service.create_report(report_service.ReportRequest(
         name=str(data.get("name", "")), template=str(data.get("template", "experiment")),
         fmt=str(data.get("format", "pdf")), experiment_id=data.get("experiment_id"),
         project_id=data.get("project_id"), sections=data.get("sections"),
-        params=data.get("params"), created_by=user["username"] if user else None)
+        params=data.get("params"), created_by=user["username"] if user else None))
     return ok(report)
 
 
@@ -66,10 +66,10 @@ def preview(report_id: str):
     report = report_service.get_report(report_id)
     if report is None:
         raise NotFoundError("报告不存在。")
-    payload_data = report_service._collect(  # noqa: SLF001
+    payload_data = report_service.collect(  # noqa: SLF001
         report["template"], report.get("experiment_id"), report.get("project_id"),
         report.get("params") or {}, None)
-    text = report_service._render_markdown(payload_data)  # noqa: SLF001
+    text = report_service.render_markdown(payload_data)  # noqa: SLF001
     return Response(text, mimetype="text/markdown; charset=utf-8")
 
 

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import csv
 import json
 import math
@@ -93,8 +95,10 @@ def update_record(record_id: str, **fields: Any) -> int:
     record = get_record(record_id)
     if record is None:
         raise NotFoundError("测距记录不存在。")
-    payload = {k: fields[k] for k in ("distance_actual_m", "actual_source", "notes",
-                                      "illumination", "category") if k in fields}
+    payload = {}
+    for key in ("distance_actual_m", "actual_source", "notes", "illumination", "category"):
+        if key in fields:
+            payload[key] = fields[key]
     if "distance_actual_m" in payload:
         actual = payload["distance_actual_m"]
         if actual in (None, ""):
@@ -121,7 +125,7 @@ def delete_record(record_id: str) -> int:
 def summary(filters: dict | None = None, save: bool = False,
             experiment_id: str | None = None) -> dict:
     result = query_records(filters, page=1, page_size=500)
-    records = _fetch_all(filters)
+    records = fetch_all(filters)
     stats = _compute_stats(records)
 
     # 缺检率的两个口径：
@@ -150,7 +154,7 @@ def summary(filters: dict | None = None, save: bool = False,
     return stats
 
 
-def _fetch_all(filters: dict | None, limit: int = 200000) -> list[dict]:
+def fetch_all(filters: dict | None, limit: int = 200000) -> list[dict]:
     filters = filters or {}
     clauses, params = ["1=1"], []
     for key in ("task_type", "strategy", "model_name", "category", "size_group",
@@ -180,10 +184,14 @@ def _fetch_all(filters: dict | None, limit: int = 200000) -> list[dict]:
         params + [limit]))
 
 
+def _has_truth(record: dict) -> bool:
+    """记录是否同时具备人工真值与平台深度值（误差统计的有效样本）。"""
+    return (record.get("distance_actual_m") not in (None, "")
+            and record.get("depth_m") not in (None, ""))
+
+
 def _compute_stats(records: list[dict]) -> dict:
-    with_truth = [r for r in records
-                  if r.get("distance_actual_m") not in (None, "")
-                  and r.get("depth_m") not in (None, "")]
+    with_truth = [r for r in records if _has_truth(r)]
     depths = np.asarray([float(r["depth_m"]) for r in with_truth], dtype=float)
     actual = np.asarray([float(r["distance_actual_m"]) for r in with_truth], dtype=float)
     errors = depths - actual
@@ -252,6 +260,11 @@ def _group(records: list[dict], dimension: str, limit: int = 40) -> list[dict]:
     return out[:limit]
 
 
+def _cell_hit(record: dict, x_dim: str, y_dim: str, x: str, y: str) -> bool:
+    """记录是否落在热力图的指定单元格。"""
+    return str(record.get(x_dim)) == x and record.get(y_dim) == y
+
+
 def _heatmap(records: list[dict], x_dim: str, y_dim: str) -> dict:
     xs, ys = sorted({str(r.get(x_dim)) for r in records if r.get(x_dim) not in (None, "")},
                     key=_sort_key), sorted(
@@ -261,9 +274,7 @@ def _heatmap(records: list[dict], x_dim: str, y_dim: str) -> dict:
     for y in ys:
         row: list[float | None] = []
         for x in xs:
-            subset = [r for r in records if str(r.get(x_dim)) == x and r.get(y_dim) == y
-                      and r.get("distance_actual_m") not in (None, "")
-                      and r.get("depth_m") not in (None, "")]
+            subset = [r for r in records if _cell_hit(r, x_dim, y_dim, x, y) and _has_truth(r)]
             if subset:
                 errs = [abs(float(r["depth_m"]) - float(r["distance_actual_m"])) for r in subset]
                 row.append(round(float(np.mean(errs)), 4))
@@ -292,9 +303,7 @@ def _leaderboard(records: list[dict], top: int = 15) -> list[dict]:
 
 def _outliers(records: list[dict], top: int = 20) -> list[dict]:
     sigma = float(settings.get("analysis.outlier_sigma", 3.0))
-    with_truth = [r for r in records
-                  if r.get("distance_actual_m") not in (None, "")
-                  and r.get("depth_m") not in (None, "")]
+    with_truth = [r for r in records if _has_truth(r)]
     if not with_truth:
         return []
     abs_errors = np.asarray([abs(float(r["depth_m"]) - float(r["distance_actual_m"]))
@@ -360,11 +369,23 @@ def get_analysis(analysis_id: str) -> dict | None:
 
 
 # ================================================================== 校正
-def calibrate_from_records(method: str = "linear", filters: dict | None = None,
-                           bounds: list[float] | None = None,
-                           name: str | None = None, persist: bool = True,
-                           experiment_id: str | None = None) -> dict:
-    records = _fetch_all(filters)
+@dataclass(frozen=True)
+class CalibrationRequest:
+    """校正拟合请求：方法、样本过滤条件与落库信息。"""
+
+    method: str = "linear"
+    filters: dict | None = None
+    bounds: list[float] | None = None
+    name: str | None = None
+    persist: bool = True
+    experiment_id: str | None = None
+
+
+def calibrate_from_records(request: CalibrationRequest) -> dict:
+    method, filters = request.method, request.filters
+    bounds, name = request.bounds, request.name
+    persist, experiment_id = request.persist, request.experiment_id
+    records = fetch_all(filters)
     measured, actual = [], []
     for row in records:
         if row.get("distance_actual_m") in (None, "") or row.get("depth_m") in (None, ""):
@@ -506,7 +527,7 @@ def dashboard_gallery(kind: str = "outlier", limit: int = 12) -> list[dict]:
 
 def experiment_leaderboard(task_type: str | None = None, limit: int = 15) -> list[dict]:
     filters = {"task_type": task_type} if task_type else {}
-    records = _fetch_all(filters)
+    records = fetch_all(filters)
     board = _leaderboard(records, top=limit)
     if task_type == "segmentation" or task_type is None:
         seg_rows = db.query_all(
@@ -673,15 +694,15 @@ def _ensure_etl_experiment(project_id: str | None, task_type: str, name: str) ->
         if row:
             project_id = row["id"]
         else:
-            project_id = project_service.create_project(
+            project_id = project_service.create_project(project_service.ProjectSpec(
                 "历史数据归档", "承载两个原项目迁移进来的实验记录",
-                scene="campus_road", app_target="sweeper")["id"]
+                scene="campus_road", app_target="sweeper"))["id"]
     existing = db.query_one("SELECT id FROM experiment WHERE name=? AND is_deleted=0", (name,))
     if existing:
         return existing["id"]
-    experiment = project_service.create_experiment(
+    experiment = project_service.create_experiment(project_service.ExperimentSpec(
         project_id=project_id, name=name, task_type=task_type, kind="evaluate",
-        config_snapshot={"note": "由历史数据迁移脚本创建"})
+        config_snapshot={"note": "由历史数据迁移脚本创建"}))
     return experiment["id"]
 
 

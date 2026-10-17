@@ -33,11 +33,11 @@ class ResUNet(nn.Module):
             nn.MaxPool2d(kernel_size=(2, 2), stride=2),
         )
 
-        self.conv_decode4 = nd.expansive_block(1024 + 512, 512, 512)
-        self.conv_decode3 = nd.expansive_block(512 + 256, 256, 256)
-        self.conv_decode2 = nd.expansive_block(256 + 128, 128, 128)
-        self.conv_decode1 = nd.expansive_block(128 + 64, 64, 64)
-        self.conv_decode0 = nd.expansive_block(64, 32, 32)
+        self.conv_decode4 = nd.ExpansiveBlock(1024 + 512, 512, 512)
+        self.conv_decode3 = nd.ExpansiveBlock(512 + 256, 256, 256)
+        self.conv_decode2 = nd.ExpansiveBlock(256 + 128, 128, 128)
+        self.conv_decode1 = nd.ExpansiveBlock(128 + 64, 64, 64)
+        self.conv_decode0 = nd.ExpansiveBlock(64, 32, 32)
 
         self.final_layer = nd.final_block(32, out_channel)
         self.out = torch.sigmoid
